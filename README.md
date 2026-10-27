@@ -1,36 +1,41 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Hinge Roast
 
-## Getting Started
+Landing page + upload flow. Users drop in a screen recording of their profile and a few chats, enter email and phone, and get in line. We review submissions oldest first and publish a report they can read with their account.
 
-First, run the development server:
+## Setup
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Create a Supabase project and run `supabase/migrations/0001_init.sql` (SQL editor, or `supabase db push`).
+2. In the dashboard, set **Storage > Settings > Global file size limit** to 50 MB (the Free plan max).
+3. `cp .env.example .env.local` and fill in the URL, publishable key and secret key.
+4. `npm install && npm run dev`
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## How a submission flows
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. `POST /api/submissions` validates the form, finds or creates the account (Supabase Auth user + `profiles` row with the phone number), reserves a slot with `reserve_submission()` and returns one signed upload URL per file.
+2. The browser uploads straight to the private `submissions` bucket (no file goes through the Next.js server, so Vercel's body limit doesn't matter) with a progress bar.
+3. `POST /api/submissions/:id/complete` checks what actually landed in storage, then marks the submission `queued` and returns the person's place in line.
+4. You work through `review_queue` (a view ordered by submit time). When a roast is ready, call `publishReport(submissionId, content)` from `lib/supabase/admin.ts`: it publishes the report, marks the submission `done` and deletes the recordings.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Users sign in later with an email one-time code (`supabase.auth.signInWithOtp`); RLS already limits them to their own submissions and published reports.
 
-## Learn More
+## The cap
 
-To learn more about Next.js, take a look at the following resources:
+Free plan: 1 GB storage per org, 50 MB max per file.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Setting (`app_settings`) | Value | Why |
+| --- | --- | --- |
+| `max_submission_bytes` | 50 MB | One 60–90s screen recording fits easily |
+| `max_open_submissions` | 18 | 18 × 50 MB = 900 MB, leaving ~100 MB headroom for the rest of the org (your `blog` project uses ~16 MB) |
+| `upload_window_minutes` | 60 | Abandoned uploads free their slot after an hour |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+A slot is "open" while a submission is uploading, queued or being reviewed. Publishing a report deletes the files and frees the slot. When all 18 are taken the button switches to "We're full — back soon".
 
-## Deploy on Vercel
+Egress is the other free-plan limit (5 GB uncached/month). Each review downloads the recording once, so that's roughly 100 roasts a month at the maximum size, more in practice.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+On Pro (100 GB) change `max_open_submissions` to something like 1800 with one SQL update; no deploy needed.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Before launch
+
+- Add rate limiting to `/api/submissions` (e.g. Vercel Firewall or Upstash) — right now anyone can create accounts for any email.
+- Turn on email confirmation / send the "you're in line" email.
+- Build the report page and the reviewer tool.
