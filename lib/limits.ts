@@ -12,6 +12,8 @@ export const ACCEPTED_TYPES = [
   "image/webp",
 ];
 
+export const MIN_PASSWORD = 8;
+
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Accepts most formats people type; returns E.164-ish digits with a leading + or null. */

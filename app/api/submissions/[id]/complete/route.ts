@@ -1,7 +1,9 @@
-import { BUCKET, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
+import { BUCKET, configError, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
 
-/** Step 2: after the browser uploads, verify the files and put the submission in line. */
+/** Step 2: after the browser uploads, verify the files and mark the submission ready for review. */
 export async function POST(_req: Request, ctx: RouteContext<"/api/submissions/[id]/complete">) {
+  const misconfigured = configError();
+  if (misconfigured) return Response.json({ error: misconfigured }, { status: 500 });
   const { id } = await ctx.params;
   const db = supabaseAdmin();
 
@@ -41,6 +43,5 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/submissions/[i
     .update({ status: "queued", submitted_at: new Date().toISOString(), total_bytes: totalBytes })
     .eq("id", sub.id);
 
-  const { data: position } = await db.rpc("queue_position", { p_submission_id: sub.id });
-  return Response.json({ position: Number(position ?? 0) });
+  return Response.json({ ok: true });
 }

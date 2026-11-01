@@ -1,6 +1,8 @@
-# Hinge Roast
+# matchbro.app
 
-Landing page + upload flow. Users drop in a screen recording of their profile and a few chats, enter email and phone, and get in line. We review submissions oldest first and publish a report they can read with their account.
+Constructive dating profile reviews.
+
+Landing page + upload flow. Users drop in a screen recording of their profile and a few chats, enter email and phone, and submit. We review submissions oldest first (users never see the queue) and publish a report they can read with their account.
 
 ## Setup
 
@@ -13,10 +15,46 @@ Landing page + upload flow. Users drop in a screen recording of their profile an
 
 1. `POST /api/submissions` validates the form, finds or creates the account (Supabase Auth user + `profiles` row with the phone number), reserves a slot with `reserve_submission()` and returns one signed upload URL per file.
 2. The browser uploads straight to the private `submissions` bucket (no file goes through the Next.js server, so Vercel's body limit doesn't matter) with a progress bar.
-3. `POST /api/submissions/:id/complete` checks what actually landed in storage, then marks the submission `queued` and returns the person's place in line.
-4. You work through `review_queue` (a view ordered by submit time). When a roast is ready, call `publishReport(submissionId, content)` from `lib/supabase/admin.ts`: it publishes the report, marks the submission `done` and deletes the recordings.
+3. `POST /api/submissions/:id/complete` checks what actually landed in storage, then marks the submission `queued`. The user just sees "Got it."
+4. You review submissions in `/admin` (see below). Publishing marks the submission `done`. Recordings are kept.
 
-Users sign in later with an email one-time code (`supabase.auth.signInWithOtp`); RLS already limits them to their own submissions and published reports.
+## Accounts and signing in
+
+Email + password, no emails sent. The first upload asks for email, phone and a password: `POST /api/submissions` creates the Supabase Auth user (already confirmed) plus a `profiles` row, and signs them in on the same response. After any upload the browser goes to `/home`, which lists their reviews and has a "Get reviewed" button that skips the account fields.
+
+Returning users sign in at `/signin` with email + password. `proxy.ts` keeps the session fresh and sends signed-out visitors from `/home` to `/signin`.
+
+If someone submits from the landing page with an email that already has an account, they're asked to sign in instead, so nobody can submit under someone else's account.
+
+Not built yet: password reset (needs email, see below).
+
+## Admin: writing and publishing reviews
+
+`/admin` lists every submission ("To review" oldest first, then "Reviewed"). Open one to see their recordings next to the report editor:
+
+- Markdown with a write/preview toggle and quick formatting buttons. Cmd+S saves.
+- Images: the Image button, or paste/drop straight into the text. They're inserted as `![name](report/...)`.
+- Voice walkthrough: Record (browser mic) or Upload audio. One per review; recording again replaces it.
+- Save draft keeps it private. Publish (with a confirm step) makes it visible to the user at `/reviews/:id`, linked from "Reviewed! 🔥" on their home page. Old `/roasts/:id` links redirect there. After publishing, edits go live when you save.
+
+Make yourself an admin (creates the account if it doesn't exist; runs on your machine):
+
+```
+npm run make-admin -- you@example.com 'your-password'
+```
+
+Admins are users with `app_metadata.role = "admin"`, which only the secret key can set. Signing in as an admin lands on `/admin`.
+
+### Where reports live
+
+Everything for a submission sits in one folder of the private `submissions` bucket:
+
+```
+{user_id}/{submission_id}/1-recording.mp4     what they uploaded  (kept)
+{user_id}/{submission_id}/report/...           report images + voice note  (kept)
+```
+
+The report text is a row in `reports` (markdown + `audio_path`, one per submission). It's in the database rather than a `.md` file in storage so draft/published state, row-level security and saving are a single transactional write. Files are served with 1-hour signed URLs. On publish, report files the final text no longer uses (replaced recordings, deleted images) are cleaned up.
 
 ## The cap
 
@@ -28,14 +66,16 @@ Free plan: 1 GB storage per org, 50 MB max per file.
 | `max_open_submissions` | 18 | 18 × 50 MB = 900 MB, leaving ~100 MB headroom for the rest of the org (your `blog` project uses ~16 MB) |
 | `upload_window_minutes` | 60 | Abandoned uploads free their slot after an hour |
 
-A slot is "open" while a submission is uploading, queued or being reviewed. Publishing a report deletes the files and frees the slot. When all 18 are taken the button switches to "We're full — back soon".
+A slot is "open" while a submission is uploading, queued or being reviewed; publishing frees the slot. Recordings, report images and voice notes are all kept, so storage only grows: the cap also stops new submissions when the bucket is within 50 MB of `storage_budget_bytes` (900 MB). On the Free plan that's roughly 18 submissions at the 50 MB maximum, more in practice. Raise `storage_budget_bytes` after upgrading to Pro. When all 18 are taken the button switches to "We're full — back soon".
 
-Egress is the other free-plan limit (5 GB uncached/month). Each review downloads the recording once, so that's roughly 100 roasts a month at the maximum size, more in practice.
+A user can have several reviews open at once. When paid reviews come in (Stripe), gate it in `POST /api/submissions` right before `reserve_submission` is called.
+
+Egress is the other free-plan limit (5 GB uncached/month). Each review downloads the recording once, so that's roughly 100 reviews a month at the maximum size, more in practice.
 
 On Pro (100 GB) change `max_open_submissions` to something like 1800 with one SQL update; no deploy needed.
 
 ## Before launch
 
 - Add rate limiting to `/api/submissions` (e.g. Vercel Firewall or Upstash) — right now anyone can create accounts for any email.
-- Turn on email confirmation / send the "you're in line" email.
+- Email: set up custom SMTP (e.g. Resend) for password resets, and send "review ready" emails.
 - Build the report page and the reviewer tool.

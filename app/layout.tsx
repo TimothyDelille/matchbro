@@ -3,8 +3,8 @@ import "@fontsource-variable/bricolage-grotesque";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Hinge Roast — we roast your profile",
-  description: "Send us a screen recording of your dating profile. Get back an honest, funny teardown and a better version.",
+  title: "matchbro.app — constructive dating profile reviews",
+  description: "Send us a screen recording of your dating profile. Get back actionable feedback to get more matches.",
 };
 
 export const viewport: Viewport = {

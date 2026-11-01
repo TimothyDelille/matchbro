@@ -1,50 +1,40 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES, MAX_SUBMISSION_MB, normalizePhone } from "@/lib/limits";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { readJson, uploadToSignedUrl } from "@/lib/upload";
+import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES, MAX_SUBMISSION_MB, MIN_PASSWORD, normalizePhone } from "@/lib/limits";
 
-type Phase =
-  | { kind: "form" }
-  | { kind: "uploading"; progress: number }
-  | { kind: "done"; position: number };
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
-const BUCKET = "submissions";
+type Phase = { kind: "form" } | { kind: "uploading"; progress: number };
 
 function mb(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
 
-/** PUT a file to a Supabase signed upload URL, reporting progress. */
-function uploadFile(path: string, token: string, file: File, onProgress: (loaded: number) => void) {
-  return new Promise<void>((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    const url = `${SUPABASE_URL}/storage/v1/object/upload/sign/${BUCKET}/${path
-      .split("/")
-      .map(encodeURIComponent)
-      .join("/")}?token=${encodeURIComponent(token)}`;
-    xhr.open("PUT", url);
-    xhr.setRequestHeader("apikey", SUPABASE_KEY);
-    xhr.setRequestHeader("x-upsert", "false");
-    xhr.upload.onprogress = (e) => onProgress(e.loaded);
-    xhr.onload = () => (xhr.status < 300 ? resolve() : reject(new Error(xhr.responseText)));
-    xhr.onerror = () => reject(new Error("network"));
-    const form = new FormData();
-    form.append("cacheControl", "3600");
-    form.append("", file);
-    xhr.send(form);
-  });
-}
+type Props = {
+  /** Set when the visitor is signed in: no account fields, uses their session. */
+  account?: { email: string };
+};
 
-export default function SubmitSheet() {
+type ApiResult = {
+  error?: string;
+  signIn?: boolean;
+  submissionId?: string;
+  uploads?: { path: string; token: string }[];
+};
+
+export default function SubmitSheet({ account }: Props) {
+  const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const [full, setFull] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
   const [files, setFiles] = useState<File[]>([]);
-  const [email, setEmail] = useState("");
+  const [email, setEmail] = useState(account?.email ?? "");
   const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [needsSignIn, setNeedsSignIn] = useState(false);
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
@@ -68,12 +58,16 @@ export default function SubmitSheet() {
   async function submit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setError(null);
+    setNeedsSignIn(false);
     const website = String(new FormData(e.currentTarget).get("website") ?? "");
 
     if (!files.length) return setError("Add your screen recording first.");
     if (tooBig) return setError(`Keep it under ${MAX_SUBMISSION_MB} MB total. A 60-second recording is plenty.`);
-    if (!EMAIL_RE.test(email.trim())) return setError("Enter a valid email address.");
-    if (!normalizePhone(phone)) return setError("Enter a valid phone number.");
+    if (!account) {
+      if (!EMAIL_RE.test(email.trim())) return setError("Enter a valid email address.");
+      if (!normalizePhone(phone)) return setError("Enter a valid phone number.");
+      if (password.length < MIN_PASSWORD) return setError(`Use at least ${MIN_PASSWORD} characters for your password.`);
+    }
 
     setPhase({ kind: "uploading", progress: 0 });
     try {
@@ -81,19 +75,21 @@ export default function SubmitSheet() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          email,
-          phone,
+          ...(account ? {} : { email, phone, password }),
           website,
           files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
         }),
       });
-      const start = await res.json();
-      if (!res.ok) throw new Error(start.error);
+      const start = await readJson<ApiResult>(res);
+      if (!res.ok) {
+        setNeedsSignIn(Boolean(start.signIn));
+        throw new Error(start.error);
+      }
 
       const loaded = new Array(files.length).fill(0);
       await Promise.all(
         files.map((file, i) =>
-          uploadFile(start.uploads[i].path, start.uploads[i].token, file, (n) => {
+          uploadToSignedUrl(start.uploads![i].path, start.uploads![i].token, file, (n) => {
             loaded[i] = n;
             setPhase({ kind: "uploading", progress: loaded.reduce((a, b) => a + b, 0) / totalBytes });
           }),
@@ -101,9 +97,15 @@ export default function SubmitSheet() {
       );
 
       const done = await fetch(`/api/submissions/${start.submissionId}/complete`, { method: "POST" });
-      const result = await done.json();
+      const result = await readJson<ApiResult>(done);
       if (!done.ok) throw new Error(result.error);
-      setPhase({ kind: "done", position: result.position });
+      // The account is signed in by now (new users are signed in by the API), so go home.
+      dialog.current?.close();
+      setPhase({ kind: "form" });
+      setFiles([]);
+      setPassword("");
+      router.push("/home");
+      router.refresh();
     } catch (err) {
       setPhase({ kind: "form" });
       setError(err instanceof Error && err.message && err.message !== "network" ? err.message : "Upload failed. Check your connection and try again.");
@@ -113,10 +115,6 @@ export default function SubmitSheet() {
   function close() {
     if (phase.kind === "uploading") return;
     dialog.current?.close();
-    if (phase.kind === "done") {
-      setPhase({ kind: "form" });
-      setFiles([]);
-    }
   }
 
   return (
@@ -127,7 +125,7 @@ export default function SubmitSheet() {
         onClick={() => dialog.current?.showModal()}
         className="inline-flex items-center justify-center rounded-full bg-flame px-9 py-5 text-xl font-bold text-paper shadow-[0_10px_0_-2px_var(--flame-deep)] transition active:translate-y-1 active:shadow-[0_6px_0_-2px_var(--flame-deep)] hover:bg-flame-deep disabled:bg-line disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed"
       >
-        {full ? "We're full — back soon" : "Get roasted"}
+        {full ? "We're full — back soon" : "New review"}
       </button>
 
       <dialog
@@ -139,18 +137,6 @@ export default function SubmitSheet() {
         className="m-auto w-[min(100vw-32px,460px)] rounded-3xl bg-paper p-0 text-ink"
       >
         <div className="p-6 sm:p-8 text-left">
-          {phase.kind === "done" ? (
-            <div className="text-center py-4">
-              <div className="text-5xl">🔥</div>
-              <h2 className="mt-4 text-3xl font-extrabold tracking-tight">You&apos;re #{phase.position} in line.</h2>
-              <p className="mt-3 text-muted">
-                We&apos;ll email <span className="text-ink font-medium">{email.trim()}</span> when your roast is ready.
-              </p>
-              <button onClick={close} className="mt-8 w-full rounded-full bg-ink py-4 font-bold text-paper">
-                Done
-              </button>
-            </div>
-          ) : (
             <form onSubmit={submit} noValidate>
               <div className="flex items-start justify-between">
                 <h2 className="text-3xl font-extrabold tracking-tight">Send it over</h2>
@@ -220,6 +206,11 @@ export default function SubmitSheet() {
                 </ul>
               )}
 
+              {account ? (
+                <p className="mt-5 text-sm text-muted">
+                  Signed in as <span className="text-ink font-medium">{account.email}</span>
+                </p>
+              ) : (
               <div className="mt-5 space-y-3">
                 <input
                   type="email"
@@ -241,13 +232,32 @@ export default function SubmitSheet() {
                   disabled={phase.kind === "uploading"}
                   className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 outline-none focus:border-ink"
                 />
+                <input
+                  type="password"
+                  autoComplete="new-password"
+                  placeholder={`Create a password (${MIN_PASSWORD}+ characters)`}
+                  aria-label="Create a password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={phase.kind === "uploading"}
+                  className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 outline-none focus:border-ink"
+                />
                 {/* honeypot */}
                 <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden />
               </div>
+              )}
 
               {error && (
                 <p role="alert" className="mt-4 text-sm text-flame-deep">
                   {error}
+                  {needsSignIn && (
+                    <>
+                      {" "}
+                      <Link href="/signin" className="font-semibold text-ink underline underline-offset-4">
+                        Sign in
+                      </Link>
+                    </>
+                  )}
                 </p>
               )}
 
@@ -263,14 +273,13 @@ export default function SubmitSheet() {
                   />
                 )}
                 <span className="relative">
-                  {phase.kind === "uploading" ? `Uploading ${Math.round(phase.progress * 100)}%` : "Roast me"}
+                  {phase.kind === "uploading" ? `Uploading ${Math.round(phase.progress * 100)}%` : "Review my profile"}
                 </span>
               </button>
               <p className="mt-3 text-center text-xs text-muted">
-                This creates your account. Your recording is deleted after we roast it.
+                {account ? "Only you and our reviewer can see your recording." : "This creates your account. Only you and our reviewer can see your recording."}
               </p>
             </form>
-          )}
         </div>
       </dialog>
     </>

@@ -3,6 +3,14 @@ import { createClient } from "@supabase/supabase-js";
 
 export const BUCKET = "submissions";
 
+/** Message to show when the server can't reach Supabase because env vars are missing. */
+export function configError(): string | null {
+  if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) return null;
+  return process.env.NODE_ENV === "development"
+    ? "Server setup: SUPABASE_SERVICE_ROLE_KEY is missing from .env.local. Add it and restart npm run dev."
+    : "We can't take submissions right now. Try again later.";
+}
+
 export function supabaseAdmin() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -20,21 +28,24 @@ export async function getSetting(name: string): Promise<number> {
   return Number(data.value);
 }
 
-/** Find the account for this email, or create one. Phone is kept on the profile. */
-export async function findOrCreateUser(email: string, phone: string): Promise<string> {
+/**
+ * Create an account for a first-time visitor. Returns null if the email
+ * already has one: returning users must sign in, so nobody can submit under
+ * (or change the phone number on) someone else's account.
+ */
+export async function createAccount(email: string, phone: string, password: string): Promise<string | null> {
   const db = supabaseAdmin();
 
   const { data: existing } = await db.from("profiles").select("id").eq("email", email).maybeSingle();
-  if (existing) {
-    await db.from("profiles").update({ phone }).eq("id", existing.id);
-    return existing.id;
-  }
+  if (existing) return null;
 
   const { data, error } = await db.auth.admin.createUser({
     email,
-    email_confirm: true, // they sign in later with a one-time code sent to this email
+    password,
+    email_confirm: true, // no confirmation email for now; they sign in with email + password
     user_metadata: { phone },
   });
+  if (error?.code === "email_exists") return null;
   if (error || !data.user) throw error ?? new Error("Could not create account");
 
   const { error: profileError } = await db
@@ -58,28 +69,4 @@ export async function sweepExpiredUploads() {
     await db.storage.from(BUCKET).remove(row.file_paths);
     await db.from("submissions").update({ file_paths: [], total_bytes: 0 }).eq("id", row.id);
   }
-}
-
-/**
- * Call this from the (future) review tool: publishes the report, marks the
- * submission done and deletes the recordings to free up storage.
- */
-export async function publishReport(submissionId: string, content: Record<string, unknown>) {
-  const db = supabaseAdmin();
-  const { data: sub, error } = await db
-    .from("submissions")
-    .select("user_id, file_paths")
-    .eq("id", submissionId)
-    .single();
-  if (error) throw error;
-
-  await db.from("reports").upsert(
-    { submission_id: submissionId, user_id: sub.user_id, content, published_at: new Date().toISOString() },
-    { onConflict: "submission_id" },
-  );
-  if (sub.file_paths.length) await db.storage.from(BUCKET).remove(sub.file_paths);
-  await db
-    .from("submissions")
-    .update({ status: "done", reviewed_at: new Date().toISOString(), file_paths: [], total_bytes: 0 })
-    .eq("id", submissionId);
 }

@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
 
 :root {
   --paper: #ffffff;
@@ -74,4 +75,10 @@ dialog[open] {
   dialog[open] {
     animation: none;
   }
+}
+
+/* Report quotes: show the admin's own quote marks, not the typography plugin's. */
+.prose blockquote p::before,
+.prose blockquote p::after {
+  content: none;
 }
