@@ -12,7 +12,8 @@ export const ACCEPTED_TYPES = [
   "image/webp",
 ];
 
-export const MIN_PASSWORD = 8;
+// Supabase Auth's default minimum. Raise both together if you change it in the dashboard.
+export const MIN_PASSWORD = 6;
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

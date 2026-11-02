@@ -33,7 +33,7 @@ export async function getSetting(name: string): Promise<number> {
  * already has one: returning users must sign in, so nobody can submit under
  * (or change the phone number on) someone else's account.
  */
-export async function createAccount(email: string, phone: string, password: string): Promise<string | null> {
+export async function createAccount(email: string, phone: string | null, password: string): Promise<string | null> {
   const db = supabaseAdmin();
 
   const { data: existing } = await db.from("profiles").select("id").eq("email", email).maybeSingle();
@@ -43,7 +43,7 @@ export async function createAccount(email: string, phone: string, password: stri
     email,
     password,
     email_confirm: true, // no confirmation email for now; they sign in with email + password
-    user_metadata: { phone },
+    user_metadata: phone ? { phone } : {},
   });
   if (error?.code === "email_exists") return null;
   if (error || !data.user) throw error ?? new Error("Could not create account");

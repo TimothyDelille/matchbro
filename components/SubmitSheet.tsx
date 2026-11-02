@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { readJson, uploadToSignedUrl } from "@/lib/upload";
 import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES, MAX_SUBMISSION_MB, MIN_PASSWORD, normalizePhone } from "@/lib/limits";
 
-type Phase = { kind: "form" } | { kind: "uploading"; progress: number };
+type Phase = { kind: "form" } | { kind: "uploading"; progress: number } | { kind: "paying" };
 
 function mb(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
@@ -22,6 +22,7 @@ type ApiResult = {
   signIn?: boolean;
   submissionId?: string;
   uploads?: { path: string; token: string }[];
+  checkoutUrl?: string;
 };
 
 export default function SubmitSheet({ account }: Props) {
@@ -36,6 +37,7 @@ export default function SubmitSheet({ account }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const busy = phase.kind !== "form";
 
   useEffect(() => {
     fetch("/api/capacity")
@@ -65,7 +67,7 @@ export default function SubmitSheet({ account }: Props) {
     if (tooBig) return setError(`Keep it under ${MAX_SUBMISSION_MB} MB total. A 60-second recording is plenty.`);
     if (!account) {
       if (!EMAIL_RE.test(email.trim())) return setError("Enter a valid email address.");
-      if (!normalizePhone(phone)) return setError("Enter a valid phone number.");
+      if (phone.trim() && !normalizePhone(phone)) return setError("That phone number doesn't look right. Fix it or leave it blank.");
       if (password.length < MIN_PASSWORD) return setError(`Use at least ${MIN_PASSWORD} characters for your password.`);
     }
 
@@ -99,6 +101,12 @@ export default function SubmitSheet({ account }: Props) {
       const done = await fetch(`/api/submissions/${start.submissionId}/complete`, { method: "POST" });
       const result = await readJson<ApiResult>(done);
       if (!done.ok) throw new Error(result.error);
+      if (result.checkoutUrl) {
+        // Files are uploaded; payment happens on Stripe, then they land on /home.
+        setPhase({ kind: "paying" });
+        window.location.assign(result.checkoutUrl);
+        return;
+      }
       // The account is signed in by now (new users are signed in by the API), so go home.
       dialog.current?.close();
       setPhase({ kind: "form" });
@@ -113,7 +121,7 @@ export default function SubmitSheet({ account }: Props) {
   }
 
   function close() {
-    if (phase.kind === "uploading") return;
+    if (busy) return;
     dialog.current?.close();
   }
 
@@ -131,7 +139,7 @@ export default function SubmitSheet({ account }: Props) {
       <dialog
         ref={dialog}
         onCancel={(e) => {
-          if (phase.kind === "uploading") e.preventDefault();
+          if (busy) e.preventDefault();
         }}
         onClick={(e) => e.target === dialog.current && close()}
         className="m-auto w-[min(100vw-32px,460px)] rounded-3xl bg-paper p-0 text-ink"
@@ -143,7 +151,7 @@ export default function SubmitSheet({ account }: Props) {
                 <button
                   type="button"
                   onClick={close}
-                  disabled={phase.kind === "uploading"}
+                  disabled={busy}
                   aria-label="Close"
                   className="-mr-2 -mt-1 h-10 w-10 rounded-full text-2xl text-muted hover:bg-line disabled:opacity-30"
                 >
@@ -175,7 +183,7 @@ export default function SubmitSheet({ account }: Props) {
                     addFiles(e.target.files);
                     e.target.value = "";
                   }}
-                  disabled={phase.kind === "uploading"}
+                  disabled={busy}
                 />
                 <span className="font-bold">Add your screen recording</span>
                 <span className="mt-1 text-sm text-muted">Your profile and a few chats, up to {MAX_SUBMISSION_MB} MB</span>
@@ -190,7 +198,7 @@ export default function SubmitSheet({ account }: Props) {
                       <button
                         type="button"
                         aria-label={`Remove ${f.name}`}
-                        disabled={phase.kind === "uploading"}
+                        disabled={busy}
                         onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))}
                         className="text-muted hover:text-ink"
                       >
@@ -219,17 +227,17 @@ export default function SubmitSheet({ account }: Props) {
                   aria-label="Email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  disabled={phase.kind === "uploading"}
+                  disabled={busy}
                   className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 outline-none focus:border-ink"
                 />
                 <input
                   type="tel"
                   autoComplete="tel"
-                  placeholder="Phone"
-                  aria-label="Phone"
+                  placeholder="Phone (optional)"
+                  aria-label="Phone (optional)"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  disabled={phase.kind === "uploading"}
+                  disabled={busy}
                   className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 outline-none focus:border-ink"
                 />
                 <input
@@ -239,7 +247,7 @@ export default function SubmitSheet({ account }: Props) {
                   aria-label="Create a password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  disabled={phase.kind === "uploading"}
+                  disabled={busy}
                   className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 outline-none focus:border-ink"
                 />
                 {/* honeypot */}
@@ -263,7 +271,7 @@ export default function SubmitSheet({ account }: Props) {
 
               <button
                 type="submit"
-                disabled={phase.kind === "uploading"}
+                disabled={busy}
                 className="relative mt-6 w-full overflow-hidden rounded-full bg-flame py-4 text-lg font-bold text-paper hover:bg-flame-deep disabled:hover:bg-flame"
               >
                 {phase.kind === "uploading" && (
@@ -273,7 +281,11 @@ export default function SubmitSheet({ account }: Props) {
                   />
                 )}
                 <span className="relative">
-                  {phase.kind === "uploading" ? `Uploading ${Math.round(phase.progress * 100)}%` : "Review my profile"}
+                  {phase.kind === "uploading"
+                    ? `Uploading ${Math.round(phase.progress * 100)}%`
+                    : phase.kind === "paying"
+                      ? "One sec…"
+                      : "Review my profile"}
                 </span>
               </button>
               <p className="mt-3 text-center text-xs text-muted">

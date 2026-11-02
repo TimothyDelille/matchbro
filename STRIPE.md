@@ -1,81 +1,94 @@
-# Stripe payment gate for roasts
+# Payments (Stripe)
 
-## How it works
+A review is paid before it reaches the queue.
 
 ```
-upload files ──► "Confirm" ──► roast-checkout (POST) ──► Stripe Checkout
-                                                              │ pays
-              submission: uploading ──► queued  ◄── stripe-webhook (checkout.session.completed)
-                                                ◄── roast-checkout verify (success page, instant)
+SubmitSheet ─ POST /api/submissions ─ upload files ─ POST /api/submissions/[id]/complete
+                                                         │ returns { checkoutUrl }
+                                                         ▼
+                                              Stripe Checkout (hosted)
+                                    paid │                         │ cancelled
+       /home?session_id=…  ◄─────────────┘                         └──► /home?checkout=cancelled
+       confirms + queues instantly                                       "Pay $9.99" to resume
+       POST /api/stripe/webhook (same thing, as a backstop)
 ```
 
-- **Price lives only in Stripe** — a Price with lookup key `roast`. The app reads it via `GET roast-checkout`; checkout charges it; the DB only records what was actually charged (`payments.amount_total`). Change the price in Stripe → everything follows.
-- **Gate is in the database.** When `app_settings.payments_required = 1`, a trigger rejects *any* move of a submission to `queued` unless a `paid` row exists in `payments` — so your existing confirm code path can't bypass it.
-- **Sandbox vs live** is only which Stripe keys are in the Supabase secrets. Create the same `roast` lookup key in both.
-- Webhook and verify are both idempotent; whichever lands first queues the submission. A customer who pays after their upload window lapsed still gets queued.
+## Single source of truth
 
-## What's deployed (project `hinge-roast`)
+- **Price**: only in Stripe — the active Price with lookup key `roast` (`lib/stripe.ts`).
+  Checkout, the charge and the "Pay $X" resume button on /home all read it (the submit button stays neutral). To change the price, create a new
+  price on the product and move the `roast` lookup key to it (tick "transfer lookup key").
+- **The gate**: `app_settings.payments_required` (0/1). The app reads it to decide whether to
+  send people to Checkout, and a database trigger refuses to queue an unpaid submission when it's 1.
 
-| Piece | What |
+## Files
+
+| File | Role |
 |---|---|
-| `public.payments` | one row per Checkout Session (pending / paid / expired / refunded), RLS: users read their own |
-| `app_settings.payments_required` | `0` now (off). Set to `1` once the frontend calls checkout |
-| `mark_submission_paid()` | service-role RPC: marks paid, snapshots files from storage, queues |
-| `roast-checkout` | `GET` price · `POST {submission_id}` → `{url}` · `POST {action:"verify", session_id}` |
-| `stripe-webhook` | `https://viingyedpzyrzobohrda.supabase.co/functions/v1/stripe-webhook` |
+| `lib/stripe.ts` | Stripe client, price lookup, create/reuse Checkout Session, mark paid |
+| `app/api/submissions/[id]/complete/route.ts` | after upload: returns `checkoutUrl` (gate on) or queues (gate off) |
+| `app/api/submissions/[id]/checkout/route.ts` | resume payment for an unpaid upload (signed-in owner only) |
+| `app/api/stripe/webhook/route.ts` | `checkout.session.completed` / `async_payment_succeeded` / `expired`, `charge.refunded` |
+| `app/home/page.tsx` | confirms `?session_id=` on return, shows "Waiting for payment" rows |
+| `supabase/migrations/20261101161011_stripe_payments.sql` | `payments` table, gate trigger, `mark_submission_paid()` (already applied) |
+| `supabase/migrations/20261102222442_optional_phone_paid_at.sql` | `submissions.paid_at`, kept in sync from `payments` by trigger (null = unpaid/refunded) |
+| `components/admin/PaidPill.tsx` | Paid / Unpaid badge on `/admin` and each submission |
 
-## Setup (sandbox)
+## Env (`.env.local`)
 
-1. **Stripe Dashboard → switch to your Sandbox.**
-2. **Product catalog → Add product** "Hinge Roast", one-time price (whatever you want).
-   On the price, set **Lookup key = `roast`** (under advanced/more options).
-3. **Developers → API keys** → copy the **Secret key** (`sk_test_…`).
-   (A restricted key works too: write on Checkout Sessions, read on Prices & Products.)
-4. **Developers → Webhooks → Add destination**
-   - URL: `https://viingyedpzyrzobohrda.supabase.co/functions/v1/stripe-webhook`
-   - Events: `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `checkout.session.expired`, `charge.refunded`
-   - Copy the **Signing secret** (`whsec_…`).
-5. **Supabase → Edge Functions → Secrets**, add:
-   - `STRIPE_SECRET_KEY` = `sk_test_…`
-   - `STRIPE_WEBHOOK_SECRET` = `whsec_…`
-   - `APP_URL` = your site origin, e.g. `https://hingeroast.app` (or `http://localhost:3000` while testing)
-
-Test card: `4242 4242 4242 4242`, any future date, any CVC.
-
-Going live later: repeat 2–5 in live mode and replace the two Stripe secrets. No code change.
-
-## Frontend changes
-
-```ts
-// 1) Show the price (single source of truth = Stripe)
-const { data: price } = await supabase.functions.invoke("roast-checkout", { method: "GET" });
-// price = { amount: 999, currency: "usd", product_name: "Hinge Roast", livemode: false }
-const label = new Intl.NumberFormat(undefined, { style: "currency", currency: price.currency })
-  .format(price.amount / 100);
-
-// 2) "Confirm" button — replaces whatever currently sets status = 'queued'
-const { data, error } = await supabase.functions.invoke("roast-checkout", {
-  body: {
-    submission_id: submissionId,
-    success_path: `/submissions/${submissionId}`, // relative to APP_URL; ?session_id=… is appended
-    cancel_path: `/submissions/${submissionId}`,  // ?checkout=cancelled is appended
-  },
-});
-if (error) { /* 409 already_submitted, 410 upload_window_expired, 400 no_files_uploaded */ }
-else if (data.url) window.location.href = data.url;
-
-// 3) Success page: confirm immediately instead of waiting for the webhook
-const sessionId = new URLSearchParams(location.search).get("session_id");
-if (sessionId) {
-  const { data } = await supabase.functions.invoke("roast-checkout", {
-    body: { action: "verify", session_id: sessionId },
-  });
-  // data = { paid: true, status: "queued" }
-}
+```
+STRIPE_SECRET_KEY=sk_test_…          # sandbox key while testing
+STRIPE_WEBHOOK_SECRET=whsec_…        # see "Webhook signing secret" below
+# APP_URL=https://matchbro.app       # optional; defaults to the request origin
 ```
 
-Then remove the old "set status = queued" code and flip the gate on:
+No publishable key needed — hosted Checkout is a redirect. Everything runs in the Next app
+(`app/api/...`); there are no Supabase Edge Functions.
+
+## Test locally (sandbox)
+
+```bash
+brew install stripe/stripe-cli/stripe
+stripe login        # pick "matchbro.app sandbox"
+```
+
+Then, in its own terminal (one line):
+
+```bash
+stripe listen --events=checkout.session.completed,checkout.session.async_payment_succeeded,checkout.session.expired,charge.refunded --forward-to=localhost:3000/api/stripe/webhook
+```
+
+It prints `Ready! Your webhook signing secret is whsec_…`. Put that in `.env.local` as
+`STRIPE_WEBHOOK_SECRET` and restart `npm run dev`. Keep `stripe listen` running while you test.
+
+Turn the gate on (Supabase SQL editor, or ask Claude):
 
 ```sql
 update app_settings set value = 1 where key = 'payments_required';
 ```
+
+Then submit a profile and pay with `4242 4242 4242 4242`, any future date, any CVC.
+3D Secure: `4000 0025 0000 3155`. Declined: `4000 0000 0000 0002`.
+
+## Webhook signing secret (`whsec_…`)
+
+Each place that sends webhooks has its own secret:
+
+| Where | Secret comes from | Stable? |
+|---|---|---|
+| Local (`stripe listen`) | printed by the CLI | Same across restarts on your machine; changes if you `stripe login` again or switch accounts. Find it again with `stripe listen --print-secret`. |
+| Production | the webhook destination you create in Stripe (live mode) | Fixed until you roll it in the Dashboard. |
+
+The local secret is **never** used in production. Your host (e.g. Vercel) gets the live one;
+`.env.local` keeps the CLI one.
+
+## Going live
+
+1. In Stripe **live mode**, create the same product and a one-time price with lookup key `roast`.
+2. Workbench → Webhooks → **Create an event destination**: Your account, **Snapshot** payload,
+   events `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+   `checkout.session.expired`, `charge.refunded`; endpoint `https://<your-domain>/api/stripe/webhook`.
+   Copy its signing secret.
+3. On your host set `STRIPE_SECRET_KEY=sk_live_…` and `STRIPE_WEBHOOK_SECRET=<that secret>`. No code changes.
+
+Sandbox product: `prod_VYBEMikStTHsw5`, price `price_1UX4s7PvNV2VhzEW6KUMMoMZ` ($9.99, lookup key `roast`).

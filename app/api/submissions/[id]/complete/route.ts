@@ -1,7 +1,12 @@
 import { BUCKET, configError, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
+import { appOrigin, checkoutForSubmission, CheckoutError, paymentsRequired } from "@/lib/stripe";
 
-/** Step 2: after the browser uploads, verify the files and mark the submission ready for review. */
-export async function POST(_req: Request, ctx: RouteContext<"/api/submissions/[id]/complete">) {
+/**
+ * Step 2: after the browser uploads, verify the files. Then either hand back a
+ * Stripe Checkout URL (payments on) or queue it straight away (payments off).
+ * The submission only reaches "queued" once Stripe says it's paid.
+ */
+export async function POST(req: Request, ctx: RouteContext<"/api/submissions/[id]/complete">) {
   const misconfigured = configError();
   if (misconfigured) return Response.json({ error: misconfigured }, { status: 500 });
   const { id } = await ctx.params;
@@ -9,7 +14,7 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/submissions/[i
 
   const { data: sub } = await db
     .from("submissions")
-    .select("id, user_id, status, file_paths")
+    .select("id, user_id, status, file_paths, created_at")
     .eq("id", id)
     .maybeSingle();
 
@@ -36,6 +41,18 @@ export async function POST(_req: Request, ctx: RouteContext<"/api/submissions/[i
       { error: missing.length ? "Some files didn't upload. Try again." : "Upload is too large." },
       { status: 400 },
     );
+  }
+
+  if (await paymentsRequired()) {
+    await db.from("submissions").update({ total_bytes: totalBytes }).eq("id", sub.id);
+    try {
+      const checkoutUrl = await checkoutForSubmission(sub, appOrigin(req));
+      return Response.json({ checkoutUrl });
+    } catch (e) {
+      if (e instanceof CheckoutError) return Response.json({ error: e.message }, { status: e.status });
+      console.error("checkout", e);
+      return Response.json({ error: "We couldn't start checkout. Try again." }, { status: 500 });
+    }
   }
 
   await db

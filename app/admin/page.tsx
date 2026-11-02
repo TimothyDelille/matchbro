@@ -3,12 +3,14 @@ import Link from "next/link";
 import { requireAdmin } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import AdminHeader from "@/components/admin/AdminHeader";
+import PaidPill from "@/components/admin/PaidPill";
 
 type Row = {
   id: string;
   user_id: string;
   status: "queued" | "reviewing" | "done";
   submitted_at: string;
+  paid_at: string | null;
   total_bytes: number;
   file_paths: string[];
 };
@@ -41,7 +43,7 @@ async function Submissions() {
 
   const { data } = await db
     .from("submissions")
-    .select("id, user_id, status, submitted_at, total_bytes, file_paths")
+    .select("id, user_id, status, submitted_at, paid_at, total_bytes, file_paths")
     .in("status", ["queued", "reviewing", "done"])
     .order("submitted_at", { ascending: true });
   const rows = (data ?? []) as Row[];
@@ -72,7 +74,7 @@ function Group({
   title: string;
   empty: string;
   rows: Row[];
-  who: Map<string, { email: string; phone: string }>;
+  who: Map<string, { email: string; phone: string | null }>;
 }) {
   return (
     <div className="mt-12">
@@ -89,13 +91,14 @@ function Group({
               <li key={r.id}>
                 <Link
                   href={`/admin/submissions/${r.id}`}
-                  className="grid grid-cols-[1fr_auto] sm:grid-cols-[9rem_1fr_auto] items-center gap-x-6 gap-y-1 py-4 hover:bg-line/40 -mx-3 px-3 rounded-xl"
+                  className="grid grid-cols-[1fr_auto_auto] sm:grid-cols-[9rem_1fr_auto_auto] items-center gap-x-4 gap-y-1 py-4 hover:bg-line/40 -mx-3 px-3 rounded-xl"
                 >
                   <span className="text-muted tabular-nums">{when.format(new Date(r.submitted_at))}</span>
-                  <span className="truncate font-semibold sm:order-none order-first col-span-2 sm:col-span-1">
+                  <span className="truncate font-semibold sm:order-none order-first col-span-3 sm:col-span-1">
                     {p?.email ?? "Unknown user"}
                     <span className="ml-3 font-normal text-muted">{p?.phone}</span>
                   </span>
+                  <PaidPill paidAt={r.paid_at} />
                   <StatusPill status={r.status} />
                 </Link>
               </li>
@@ -116,3 +119,4 @@ function StatusPill({ status }: { status: Row["status"] }) {
   const label = { queued: "New", reviewing: "Draft", done: "Published" }[status];
   return <span className={`rounded-full px-3 py-1 text-sm font-semibold ${styles}`}>{label}</span>;
 }
+

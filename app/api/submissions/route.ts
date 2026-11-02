@@ -25,12 +25,13 @@ export async function POST(req: Request) {
 
   const sessionUser = await currentUser();
   const email = (body.email ?? "").trim().toLowerCase();
-  const phone = normalizePhone(body.phone ?? "");
+  const rawPhone = (body.phone ?? "").trim();
+  const phone = rawPhone ? normalizePhone(rawPhone) : null; // optional
   const files = Array.isArray(body.files) ? body.files : [];
 
   if (!sessionUser) {
     if (!EMAIL_RE.test(email)) return fail("Enter a valid email address.");
-    if (!phone) return fail("Enter a valid phone number.");
+    if (rawPhone && !phone) return fail("That phone number doesn't look right. Fix it or leave it blank.");
     if (typeof body.password !== "string" || body.password.length < MIN_PASSWORD) {
       return fail(`Use at least ${MIN_PASSWORD} characters for your password.`);
     }
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
     userId = sessionUser.id;
   } else {
     try {
-      const created = await createAccount(email, phone!, body.password!);
+      const created = await createAccount(email, phone, body.password!);
       if (!created) {
         return Response.json(
           { error: "You already have an account with this email. Sign in to send another profile.", signIn: true },
@@ -78,7 +79,8 @@ export async function POST(req: Request) {
     }
   }
 
-  // TODO(stripe): once reviews are paid, check the user has an unused credit here.
+  // Payment happens after upload (see complete/route.ts + lib/stripe.ts); the slot is
+  // reserved now and freed by the upload window if they never pay.
   const { data: submissionId, error: reserveError } = await db.rpc("reserve_submission", {
     p_user_id: userId,
   });

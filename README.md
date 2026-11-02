@@ -2,25 +2,25 @@
 
 Constructive dating profile reviews.
 
-Landing page + upload flow. Users drop in a screen recording of their profile and a few chats, enter email and phone, and submit. We review submissions oldest first (users never see the queue) and publish a report they can read with their account.
+Landing page + upload flow. Users drop in a screen recording of their profile and a few chats, enter their email (phone optional), and submit. We review submissions oldest first (users never see the queue) and publish a report they can read with their account.
 
 ## Setup
 
 1. Create a Supabase project and run `supabase/migrations/0001_init.sql` (SQL editor, or `supabase db push`).
 2. In the dashboard, set **Storage > Settings > Global file size limit** to 50 MB (the Free plan max).
-3. `cp .env.example .env.local` and fill in the URL, publishable key and secret key.
+3. `cp .env.example .env.local` and fill in the Supabase URL, publishable key and secret key, plus the Stripe keys (see `STRIPE.md`).
 4. `npm install && npm run dev`
 
 ## How a submission flows
 
-1. `POST /api/submissions` validates the form, finds or creates the account (Supabase Auth user + `profiles` row with the phone number), reserves a slot with `reserve_submission()` and returns one signed upload URL per file.
+1. `POST /api/submissions` validates the form, finds or creates the account (Supabase Auth user + `profiles` row, phone optional), reserves a slot with `reserve_submission()` and returns one signed upload URL per file.
 2. The browser uploads straight to the private `submissions` bucket (no file goes through the Next.js server, so Vercel's body limit doesn't matter) with a progress bar.
-3. `POST /api/submissions/:id/complete` checks what actually landed in storage, then marks the submission `queued`. The user just sees "Got it."
+3. `POST /api/submissions/:id/complete` checks what actually landed in storage. With payments on, it returns a Stripe Checkout URL and the submission is only marked `queued` once Stripe confirms payment (success page or webhook). With payments off, it's queued straight away. Details in `STRIPE.md`.
 4. You review submissions in `/admin` (see below). Publishing marks the submission `done`. Recordings are kept.
 
 ## Accounts and signing in
 
-Email + password, no emails sent. The first upload asks for email, phone and a password: `POST /api/submissions` creates the Supabase Auth user (already confirmed) plus a `profiles` row, and signs them in on the same response. After any upload the browser goes to `/home`, which lists their reviews and has a "Get reviewed" button that skips the account fields.
+Email + password, no emails sent. The first upload asks for email, an optional phone number and a password (6+ characters, Supabase's default minimum): `POST /api/submissions` creates the Supabase Auth user (already confirmed) plus a `profiles` row, and signs them in on the same response. After any upload the browser goes to `/home`, which lists their reviews and has a "Get reviewed" button that skips the account fields.
 
 Returning users sign in at `/signin` with email + password. `proxy.ts` keeps the session fresh and sends signed-out visitors from `/home` to `/signin`.
 
@@ -68,7 +68,7 @@ Free plan: 1 GB storage per org, 50 MB max per file.
 
 A slot is "open" while a submission is uploading, queued or being reviewed; publishing frees the slot. Recordings, report images and voice notes are all kept, so storage only grows: the cap also stops new submissions when the bucket is within 50 MB of `storage_budget_bytes` (900 MB). On the Free plan that's roughly 18 submissions at the 50 MB maximum, more in practice. Raise `storage_budget_bytes` after upgrading to Pro. When all 18 are taken the button switches to "We're full — back soon".
 
-A user can have several reviews open at once. When paid reviews come in (Stripe), gate it in `POST /api/submissions` right before `reserve_submission` is called.
+A user can have several reviews open at once. Each review is paid separately via Stripe Checkout after upload (`STRIPE.md`); an unpaid upload holds its slot until `upload_window_minutes` runs out.
 
 Egress is the other free-plan limit (5 GB uncached/month). Each review downloads the recording once, so that's roughly 100 reviews a month at the maximum size, more in practice.
 

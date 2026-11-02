@@ -6,6 +6,7 @@ import { BUCKET, supabaseAdmin } from "@/lib/supabase/admin";
 import { referencedAssets, signAssets } from "@/lib/report";
 import AdminHeader from "@/components/admin/AdminHeader";
 import ReportEditor from "@/components/admin/ReportEditor";
+import PaidPill from "@/components/admin/PaidPill";
 
 const when = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -31,7 +32,7 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
 
   const { data: sub } = await db
     .from("submissions")
-    .select("id, user_id, status, submitted_at, file_paths")
+    .select("id, user_id, status, submitted_at, paid_at, file_paths")
     .eq("id", id)
     .maybeSingle();
   if (!sub || !["queued", "reviewing", "done"].includes(sub.status)) notFound();
@@ -65,6 +66,9 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">{profile?.email ?? "Unknown user"}</h1>
         <span className="text-muted">{profile?.phone}</span>
         <span className="text-muted">Submitted {when.format(new Date(sub.submitted_at))}</span>
+        <span title={sub.paid_at ? `Paid ${when.format(new Date(sub.paid_at))}` : "No payment on record"}>
+          <PaidPill paidAt={sub.paid_at} />
+        </span>
       </div>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">

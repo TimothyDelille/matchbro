@@ -1,14 +1,27 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import PayButton from "@/components/PayButton";
 import SubmitSheet from "@/components/SubmitSheet";
 import { supabaseServer } from "@/lib/supabase/server";
+import { getSetting } from "@/lib/supabase/admin";
+import { checkoutPriceLabel, confirmCheckout } from "@/lib/stripe";
 
 type Submission = {
   id: string;
   status: "uploading" | "queued" | "reviewing" | "done" | "expired";
   submitted_at: string | null;
+  created_at: string;
+  file_paths: string[];
 };
+
+/** Unpaid uploads are only resumable while there's room for a 30-minute Checkout Session. */
+const MIN_MINUTES_TO_PAY = 31;
+
+function canStillPay(s: Submission, windowMinutes: number) {
+  const ageMinutes = (Date.now() - new Date(s.created_at).getTime()) / 60_000;
+  return s.file_paths.length > 0 && windowMinutes - ageMinutes >= MIN_MINUTES_TO_PAY;
+}
 
 const dateFmt = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -16,7 +29,7 @@ const dateFmt = new Intl.DateTimeFormat("en-US", {
   year: "numeric",
 });
 
-export default function Home() {
+export default function Home({ searchParams }: PageProps<"/home">) {
   return (
     <main className="flex-1 flex flex-col">
       <header className="mx-auto w-full max-w-3xl px-5 sm:px-8 pt-6 flex items-center justify-between">
@@ -38,26 +51,39 @@ export default function Home() {
             </h1>
           }
         >
-          <Reviews />
+          <Reviews searchParams={searchParams} />
         </Suspense>
       </section>
     </main>
   );
 }
 
-async function Reviews() {
+async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["searchParams"] }) {
   const supabase = await supabaseServer();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/signin");
 
-  const { data } = await supabase
-    .from("submissions")
-    .select("id, status, submitted_at")
-    .in("status", ["queued", "reviewing", "done"])
-    .order("submitted_at", { ascending: false });
-  const submissions = (data ?? []) as Submission[];
+  // Back from Stripe: confirm right away instead of waiting for the webhook.
+  const params = await searchParams;
+  const sessionId = typeof params.session_id === "string" ? params.session_id : null;
+  const payment = sessionId ? await confirmCheckout(sessionId, user.id) : null;
+  const cancelled = params.checkout === "cancelled";
+
+  const [{ data }, priceLabel, windowMinutes] = await Promise.all([
+    supabase
+      .from("submissions")
+      .select("id, status, submitted_at, created_at, file_paths")
+      .in("status", ["uploading", "queued", "reviewing", "done"])
+      .order("submitted_at", { ascending: false, nullsFirst: true })
+      .order("created_at", { ascending: false }),
+    checkoutPriceLabel(),
+    getSetting("upload_window_minutes"),
+  ]);
+  const submissions = ((data ?? []) as Submission[]).filter(
+    (s) => s.status !== "uploading" || (priceLabel !== null && canStillPay(s, windowMinutes)),
+  );
 
   return (
     <>
@@ -66,6 +92,22 @@ async function Reviews() {
           Your reviews
         </h1>
       </div>
+
+      {payment === "paid" && (
+        <p role="status" className="mt-8 rounded-2xl bg-flame/10 px-5 py-4 font-medium">
+          Payment received. We will send you an email once we reviewed your profile 🔥
+        </p>
+      )}
+      {payment === "pending" && (
+        <p role="status" className="mt-8 rounded-2xl bg-line/60 px-5 py-4 font-medium">
+          Your payment is processing. We&apos;ll start your review as soon as it clears.
+        </p>
+      )}
+      {cancelled && (
+        <p role="status" className="mt-8 rounded-2xl bg-line/60 px-5 py-4 font-medium">
+          Payment cancelled. Your upload is saved for a little while, so you can finish paying below.
+        </p>
+      )}
 
       {submissions.length === 0 ? (
         <p className="mt-12 text-lg text-muted">
@@ -79,11 +121,16 @@ async function Reviews() {
               className="flex items-center justify-between gap-4 py-5"
             >
               <span className="font-semibold">
-                {s.submitted_at
-                  ? dateFmt.format(new Date(s.submitted_at))
-                  : "Just now"}
+                {dateFmt.format(new Date(s.submitted_at ?? s.created_at))}
               </span>
-              <Status id={s.id} status={s.status} />
+              {s.status === "uploading" ? (
+                <span className="flex items-center gap-3">
+                  <span className="text-muted text-sm">Waiting for payment</span>
+                  <PayButton submissionId={s.id} priceLabel={priceLabel} />
+                </span>
+              ) : (
+                <Status id={s.id} status={s.status} />
+              )}
             </li>
           ))}
         </ul>
@@ -95,7 +142,7 @@ async function Reviews() {
   );
 }
 
-function Status({ id, status }: { id: string; status: Submission["status"] }) {
+function Status({ id, status }: { id: string; status: Exclude<Submission["status"], "uploading"> }) {
   if (status === "queued" || status === "reviewing") {
     return (
       <span className="text-flame-deep font-medium">Currently being reviewed ⏳</span>
