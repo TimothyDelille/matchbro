@@ -39,12 +39,12 @@ export default function Landing() {
       <section className="mx-auto w-full max-w-6xl flex-1 px-5 sm:px-8 py-10 lg:py-0 grid lg:grid-cols-[1.25fr_1fr] items-center gap-10 lg:gap-6">
         <div className="text-center lg:text-left">
           <h1 className="font-extrabold tracking-[-0.045em] leading-[0.88] text-[clamp(3.25rem,11vw,6.75rem)]">
-            We review
+            No matches?
             <br />
-            your dating profile.
+            We know why
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-muted max-w-md mx-auto lg:mx-0">
-            Send a screen recording of your profile and we&apos;ll tell you what&apos;s not working.<br/><br/>Actionable feedback that gets you more matches.
+            Send a screen recording of your profile and we&apos;ll tell you what&apos;s not working.<br/><br/>Actionable feedback that gets you matches.
           </p>
           <div className="mt-8">
             <Suspense fallback={<SubmitSheet />}>
