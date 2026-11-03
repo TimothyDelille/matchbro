@@ -3,8 +3,8 @@ import "@fontsource-variable/bricolage-grotesque";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "matchbro.app — constructive dating profile reviews",
-  description: "Send us a screen recording of your dating profile. Get back actionable feedback to get more matches.",
+  title: "matchbro.app — dating profile reviews",
+  description: "Send us a screen recording of your dating profile. Get back actionable feedback that gets more matches.",
 };
 
 export const viewport: Viewport = {

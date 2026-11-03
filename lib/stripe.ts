@@ -16,6 +16,13 @@ let client: Stripe | null = null;
 export function stripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
   if (!key) throw new Error("STRIPE_SECRET_KEY is missing");
+  // A sandbox key on the production site would let people "pay" with test cards.
+  if (process.env.VERCEL_ENV === "production" && /^(sk|rk)_test_/.test(key)) {
+    throw new Error(
+      "STRIPE_SECRET_KEY is a sandbox (test) key on the production deployment. " +
+        "Set the live key for the Production environment in Vercel and redeploy.",
+    );
+  }
   client ??= new Stripe(key);
   return client;
 }
