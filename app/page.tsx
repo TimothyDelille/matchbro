@@ -44,7 +44,7 @@ export default function Landing() {
             We know why
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-muted max-w-md mx-auto lg:mx-0">
-            Send a screen recording of your profile and we&apos;ll tell you what&apos;s not working.<br/><br/>Actionable feedback that gets you matches.
+            Send screenshots of your dating profile and we&apos;ll tell you what&apos;s not working.<br/><br/>Actionable feedback that gets you matches.
           </p>
           <div className="mt-8">
             <Suspense fallback={<SubmitSheet />}>
