@@ -17,14 +17,31 @@ function Phone({
   );
 }
 
-function Avatar({ tone }: { tone: string }) {
-  return <div className={`h-16 sm:h-24 rounded-2xl ${tone}`} aria-hidden />;
+function Photo({ src, position = "center" }: { src: string; position?: string }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      className="h-24 sm:h-44 w-full shrink-0 rounded-2xl object-cover"
+      style={{ objectPosition: position }}
+    />
+  );
+}
+
+function Prompt({ label, answer }: { label: string; answer: string }) {
+  return (
+    <div className="mt-3 rounded-2xl bg-white px-3 py-3 sm:px-4 sm:py-4 shadow-[0_1px_3px_rgb(23_18_28/0.08)]">
+      <p className="text-[10px] sm:text-[11px] font-medium text-ink">{label}</p>
+      <p className="mt-1.5 font-serif font-bold text-[14px] sm:text-[18px] leading-tight text-ink">{answer}</p>
+    </div>
+  );
 }
 
 function Bubble({ children, mine = false }: { children: React.ReactNode; mine?: boolean }) {
   return (
     <div
-      className={`mt-auto max-w-[85%] rounded-2xl px-3 py-2 text-[12px] ${
+      className={`max-w-[85%] rounded-2xl px-3 py-2 text-[12px] ${
         mine ? "self-end bg-ink text-paper rounded-br-md" : "self-start bg-line rounded-bl-md"
       }`}
     >
@@ -33,30 +50,36 @@ function Bubble({ children, mine = false }: { children: React.ReactNode; mine?: 
   );
 }
 
+function Messages({ children }: { children: React.ReactNode }) {
+  return <div className="mt-auto pt-3 flex flex-col gap-1">{children}</div>;
+}
+
 export default function BeforeAfter() {
   return (
     <div className="relative flex justify-center items-end h-[380px] sm:h-[500px] select-none" aria-hidden>
       {/* Before */}
       <div className="absolute left-1/2 -translate-x-[92%] sm:-translate-x-[96%] top-8 -rotate-[7deg] opacity-90">
         <Phone>
-          <Avatar tone="bg-gradient-to-br from-zinc-200 to-zinc-300" />
-          <p className="mt-3 font-semibold text-[11px] text-muted">My bio</p>
-          <p className="mt-1 text-muted">
-            <span className="strike">Likes pizza and travel.</span> Open to new friends.
-          </p>
-          <Bubble>Hey, what&apos;s up?</Bubble>
+          <Photo src="/landing_page_bad_pic_2.jpeg" position="center 35%" />
+          <Prompt label="I'm looking for" answer="Someone to cherish for the rest of my life" />
+          <Messages>
+            <Bubble>Hey, what&apos;s up?</Bubble>
+          </Messages>
         </Phone>
+        <span className="absolute -top-3 -left-3 grid place-items-center h-12 w-12 rounded-full bg-line text-2xl -rotate-[8deg] shadow-lg">
+          👎
+        </span>
       </div>
 
       {/* After */}
       <div className="absolute left-1/2 -translate-x-[8%] sm:-translate-x-[4%] top-0 rotate-[4deg]">
         <Phone>
-          <Avatar tone="bg-gradient-to-br from-butter to-flame" />
-          <p className="mt-3 font-semibold text-[11px] text-muted">My bio</p>
-          <p className="mt-1 font-medium">
-            Amateur chef, semi-pro sunset chaser. Tell me your worst pick-up line.
-          </p>
-          <Bubble mine>Okay but which sunset spot is overrated?</Bubble>
+          <Photo src="/landing_page_good_pic.jpeg" position="center 22%" />
+          <Prompt label="The key to my heart is" answer="Open heart surgery" />
+          <Messages>
+            <Bubble mine>Ok so first off</Bubble>
+            <Bubble mine>you&apos;re pretty cute</Bubble>
+          </Messages>
         </Phone>
         <span className="absolute -top-3 -right-3 grid place-items-center h-12 w-12 rounded-full bg-flame text-2xl rotate-[8deg] shadow-lg">
           🔥

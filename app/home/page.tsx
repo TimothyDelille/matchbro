@@ -54,6 +54,13 @@ export default function Home({ searchParams }: PageProps<"/home">) {
           <Reviews searchParams={searchParams} />
         </Suspense>
       </section>
+
+      <footer className="mt-auto mx-auto w-full max-w-3xl px-5 sm:px-8 pb-8 text-center text-sm text-muted">
+        Any questions? Email us at{" "}
+        <a href="mailto:support@matchbro.app" className="font-medium text-ink underline underline-offset-2 hover:text-flame">
+          support@matchbro.app
+        </a>
+      </footer>
     </main>
   );
 }

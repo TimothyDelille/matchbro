@@ -44,7 +44,7 @@ export default function Landing() {
             your dating profile.
           </h1>
           <p className="mt-6 text-lg sm:text-xl text-muted max-w-md mx-auto lg:mx-0">
-            Send a screen recording of your profile and a few chats. We&apos;ll tell you what&apos;s not working.
+            Send a screen recording of your profile and we&apos;ll tell you what&apos;s not working.<br/><br/>No AI slop. Actionable feedback to get you more matches.
           </p>
           <div className="mt-8">
             <Suspense fallback={<SubmitSheet />}>
