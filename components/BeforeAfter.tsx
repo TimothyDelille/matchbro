@@ -60,7 +60,7 @@ export default function BeforeAfter() {
       {/* Before */}
       <div className="absolute left-1/2 -translate-x-[92%] sm:-translate-x-[96%] top-8 -rotate-[7deg] opacity-90">
         <Phone>
-          <Photo src="/landing_page_bad_pic_2.jpeg" position="center 35%" />
+          <Photo src="/landing_page_bad_pic.jpeg" position="center 35%" />
           <Prompt label="I'm looking for" answer="Someone to cherish for the rest of my life" />
           <Messages>
             <Bubble>Hey, what&apos;s up?</Bubble>
