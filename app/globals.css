@@ -9,6 +9,9 @@
   --flame-deep: #e2400a;
   --butter: #ffd84a;
   --line: #ece8ef;
+  /* Profile score bands (yellow is --butter). */
+  --good: #22a55b;
+  --bad: #e5383b;
 }
 
 @theme inline {

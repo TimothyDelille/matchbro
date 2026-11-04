@@ -7,6 +7,7 @@ import { referencedAssets, signAssets } from "@/lib/report";
 import AdminHeader from "@/components/admin/AdminHeader";
 import ReportEditor from "@/components/admin/ReportEditor";
 import PaidPill from "@/components/admin/PaidPill";
+import { SCORE_COLUMNS, scoresFromRow } from "@/lib/score";
 
 const when = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -41,7 +42,7 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
     db.from("profiles").select("email, phone").eq("id", sub.user_id).maybeSingle(),
     db
       .from("reports")
-      .select("markdown, audio_path, published_at, updated_at")
+      .select(`markdown, audio_path, published_at, updated_at, ${SCORE_COLUMNS}`)
       .eq("submission_id", id)
       .maybeSingle(),
     sub.file_paths.length
@@ -88,6 +89,7 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
           initial={{
             markdown,
             audioPath,
+            scores: scoresFromRow(report),
             publishedAt: report?.published_at ?? null,
             updatedAt: report?.updated_at ?? null,
           }}

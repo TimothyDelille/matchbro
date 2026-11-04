@@ -1,5 +1,6 @@
 import { adminOrResponse } from "@/lib/admin-auth";
 import { REPORT_DIR, saveReport } from "@/lib/report";
+import { parseScores } from "@/lib/score";
 
 /** Save the report as a draft (publish: false) or publish it to the user (publish: true). */
 export async function PUT(req: Request, ctx: RouteContext<"/api/admin/submissions/[id]/report">) {
@@ -10,11 +11,13 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/admin/submission
   const body = (await req.json().catch(() => ({}))) as {
     markdown?: unknown;
     audioPath?: unknown;
+    scores?: unknown;
     publish?: unknown;
   };
   const markdown = typeof body.markdown === "string" ? body.markdown : "";
   const audioPath =
     typeof body.audioPath === "string" && body.audioPath.startsWith(`${REPORT_DIR}/`) ? body.audioPath : null;
+  const scores = parseScores(body.scores);
   const publish = body.publish === true;
 
   if (publish && !markdown.trim() && !audioPath) {
@@ -22,7 +25,7 @@ export async function PUT(req: Request, ctx: RouteContext<"/api/admin/submission
   }
 
   try {
-    const { publishedAt } = await saveReport(id, { markdown, audioPath, publish });
+    const { publishedAt } = await saveReport(id, { markdown, audioPath, scores, publish });
     return Response.json({ publishedAt, savedAt: new Date().toISOString() });
   } catch (e) {
     console.error("save report", e);

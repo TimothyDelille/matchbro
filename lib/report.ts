@@ -1,5 +1,6 @@
 import "server-only";
 import { BUCKET, supabaseAdmin } from "@/lib/supabase/admin";
+import { scoresToRow, type Scores } from "@/lib/score";
 
 /**
  * Report files live inside the submission's folder:
@@ -51,7 +52,7 @@ export async function pruneUnusedAssets(userId: string, submissionId: string, ke
   if (unused.length) await db.storage.from(BUCKET).remove(unused);
 }
 
-export type ReportInput = { markdown: string; audioPath: string | null; publish: boolean };
+export type ReportInput = { markdown: string; audioPath: string | null; scores: Scores; publish: boolean };
 
 /**
  * Save a report draft, or publish it to the user.
@@ -83,6 +84,7 @@ export async function saveReport(submissionId: string, input: ReportInput) {
       user_id: sub.user_id,
       markdown: input.markdown,
       audio_path: input.audioPath,
+      ...scoresToRow(input.scores),
       published_at: publishedAt,
       updated_at: now,
     },

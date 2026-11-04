@@ -5,11 +5,14 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import Markdown from "@/components/Markdown";
 import VoiceRecorder from "@/components/admin/VoiceRecorder";
+import ScorePanel from "@/components/admin/ScorePanel";
+import type { RubricKey, Scores } from "@/lib/score";
 import { readJson, uploadToSignedUrl } from "@/lib/upload";
 
 type Initial = {
   markdown: string;
   audioPath: string | null;
+  scores: Scores;
   publishedAt: string | null;
   updatedAt: string | null;
 };
@@ -40,6 +43,7 @@ export default function ReportEditor({
   const textarea = useRef<HTMLTextAreaElement>(null);
   const [markdown, setMarkdown] = useState(initial.markdown || STARTER);
   const [audioPath, setAudioPath] = useState<string | null>(initial.audioPath);
+  const [scores, setScores] = useState<Scores>(initial.scores);
   const [assets, setAssets] = useState(initialAssets);
   const [tab, setTab] = useState<"write" | "preview">("write");
   const [publishedAt, setPublishedAt] = useState(initial.publishedAt);
@@ -58,6 +62,11 @@ export default function ReportEditor({
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [dirty]);
+
+  function setScore(key: RubricKey, value: number | null) {
+    setScores((s) => ({ ...s, [key]: value }));
+    setDirty(true);
+  }
 
   function edit(next: string) {
     setMarkdown(next);
@@ -161,7 +170,7 @@ export default function ReportEditor({
         const res = await fetch(`/api/admin/submissions/${submissionId}/report`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ markdown, audioPath, publish }),
+          body: JSON.stringify({ markdown, audioPath, scores, publish }),
         });
         const data = await readJson<{ publishedAt: string | null; savedAt: string }>(res);
         if (!res.ok) throw new Error(data.error);
@@ -175,7 +184,7 @@ export default function ReportEditor({
         setBusy(null);
       }
     },
-    [submissionId, markdown, audioPath, published, router],
+    [submissionId, markdown, audioPath, scores, published, router],
   );
 
   // Cmd/Ctrl+S saves.
@@ -202,6 +211,8 @@ export default function ReportEditor({
           {dirty && " · unsaved changes"}
         </span>
       </div>
+
+      <ScorePanel scores={scores} onChange={setScore} disabled={Boolean(busy)} />
 
       {/* Voice walkthrough */}
       <div className="mt-4 rounded-2xl border border-line p-4">

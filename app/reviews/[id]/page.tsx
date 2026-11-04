@@ -3,8 +3,10 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import Markdown from "@/components/Markdown";
 import MediaCarousel from "@/components/MediaCarousel";
+import ScoreCard from "@/components/ScoreCard";
 import { isAdmin } from "@/lib/admin-auth";
 import { referencedAssets, signAssets, signSubmissionMedia } from "@/lib/report";
+import { SCORE_COLUMNS, scoresFromRow } from "@/lib/score";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 
@@ -40,7 +42,7 @@ async function Review({ params }: { params: PageProps<"/reviews/[id]">["params"]
   const db = isAdmin(user) ? supabaseAdmin() : supabase;
   const { data: report } = await db
     .from("reports")
-    .select("user_id, markdown, audio_path, published_at")
+    .select(`user_id, markdown, audio_path, published_at, ${SCORE_COLUMNS}`)
     .eq("submission_id", id)
     .maybeSingle();
   if (!report || (!report.published_at && !isAdmin(user))) notFound();
@@ -59,7 +61,9 @@ async function Review({ params }: { params: PageProps<"/reviews/[id]">["params"]
       <p className="text-muted">
         {report.published_at ? `Reviewed by Tim on ${dateFmt.format(new Date(report.published_at))}` : "Draft preview"}
       </p>
-      
+
+      <ScoreCard scores={scoresFromRow(report)} />
+
       <MediaCarousel items={media} />
 
       {audio && (
