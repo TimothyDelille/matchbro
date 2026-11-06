@@ -33,10 +33,10 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
 
   const { data: sub } = await db
     .from("submissions")
-    .select("id, user_id, status, submitted_at, paid_at, file_paths")
+    .select("id, user_id, status, submitted_at, created_at, paid_at, file_paths")
     .eq("id", id)
     .maybeSingle();
-  if (!sub || !["queued", "reviewing", "done"].includes(sub.status)) notFound();
+  if (!sub || !["uploading", "queued", "reviewing", "done"].includes(sub.status)) notFound();
 
   const [{ data: profile }, { data: report }, { data: signed }] = await Promise.all([
     db.from("profiles").select("email, phone").eq("id", sub.user_id).maybeSingle(),
@@ -66,7 +66,11 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
       <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">{profile?.email ?? "Unknown user"}</h1>
         <span className="text-muted">{profile?.phone}</span>
-        <span className="text-muted">Submitted {when.format(new Date(sub.submitted_at))}</span>
+        <span className="text-muted">
+          {sub.submitted_at
+            ? `Submitted ${when.format(new Date(sub.submitted_at))}`
+            : `Uploaded ${when.format(new Date(sub.created_at))} · not paid yet`}
+        </span>
         <span title={sub.paid_at ? `Paid ${when.format(new Date(sub.paid_at))}` : "No payment on record"}>
           <PaidPill paidAt={sub.paid_at} />
         </span>

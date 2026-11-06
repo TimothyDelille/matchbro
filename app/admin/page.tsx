@@ -8,8 +8,10 @@ import PaidPill from "@/components/admin/PaidPill";
 type Row = {
   id: string;
   user_id: string;
-  status: "queued" | "reviewing" | "done";
-  submitted_at: string;
+  status: "uploading" | "queued" | "reviewing" | "done";
+  /** Set when the submission is queued (on payment); null while still unpaid. */
+  submitted_at: string | null;
+  created_at: string;
   paid_at: string | null;
   total_bytes: number;
   file_paths: string[];
@@ -43,10 +45,13 @@ async function Submissions() {
 
   const { data } = await db
     .from("submissions")
-    .select("id, user_id, status, submitted_at, paid_at, total_bytes, file_paths")
-    .in("status", ["queued", "reviewing", "done"])
-    .order("submitted_at", { ascending: true });
-  const rows = (data ?? []) as Row[];
+    .select("id, user_id, status, submitted_at, created_at, paid_at, total_bytes, file_paths")
+    .in("status", ["uploading", "queued", "reviewing", "done"])
+    .order("created_at", { ascending: true });
+  // "uploading" = files sent but not paid yet. Skip ones with no files (swept/abandoned).
+  const rows = ((data ?? []) as Row[])
+    .filter((r) => r.status !== "uploading" || r.file_paths.length > 0)
+    .sort((a, b) => sortTime(a) - sortTime(b));
 
   const ids = [...new Set(rows.map((r) => r.user_id))];
   const { data: profiles } = ids.length
@@ -54,12 +59,14 @@ async function Submissions() {
     : { data: [] };
   const who = new Map((profiles ?? []).map((p) => [p.id, p]));
 
-  const open = rows.filter((r) => r.status !== "done");
+  const open = rows.filter((r) => r.status === "queued" || r.status === "reviewing");
+  const unpaid = rows.filter((r) => r.status === "uploading").reverse();
   const done = rows.filter((r) => r.status === "done").reverse();
 
   return (
     <>
       <Group title="To review" empty="Nothing waiting. Nice." rows={open} who={who} />
+      <Group title="Unpaid" empty="No unpaid submissions." rows={unpaid} who={who} />
       <Group title="Reviewed" empty="No reviews published yet." rows={done} who={who} />
     </>
   );
@@ -93,7 +100,7 @@ function Group({
                   href={`/admin/submissions/${r.id}`}
                   className="grid grid-cols-[1fr_auto_auto] sm:grid-cols-[9rem_1fr_auto_auto] items-center gap-x-4 gap-y-1 py-4 hover:bg-line/40 -mx-3 px-3 rounded-xl"
                 >
-                  <span className="text-muted tabular-nums">{when.format(new Date(r.submitted_at))}</span>
+                  <span className="text-muted tabular-nums">{when.format(new Date(r.submitted_at ?? r.created_at))}</span>
                   <span className="truncate font-semibold sm:order-none order-first col-span-3 sm:col-span-1">
                     {p?.email ?? "Unknown user"}
                     <span className="ml-3 font-normal text-muted">{p?.phone}</span>
@@ -110,13 +117,16 @@ function Group({
   );
 }
 
+const sortTime = (r: Row) => new Date(r.submitted_at ?? r.created_at).getTime();
+
 function StatusPill({ status }: { status: Row["status"] }) {
   const styles = {
+    uploading: "border border-dashed border-muted text-muted",
     queued: "bg-flame text-paper",
     reviewing: "bg-butter text-ink",
     done: "bg-line text-muted",
   }[status];
-  const label = { queued: "New", reviewing: "Draft", done: "Published" }[status];
+  const label = { uploading: "In checkout", queued: "New", reviewing: "Draft", done: "Published" }[status];
   return <span className={`rounded-full px-3 py-1 text-sm font-semibold ${styles}`}>{label}</span>;
 }
 
