@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import posthog from "posthog-js";
 import { readJson, uploadToSignedUrl } from "@/lib/upload";
 import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES, MAX_SUBMISSION_MB } from "@/lib/limits";
 
@@ -70,6 +71,7 @@ export default function SubmitSheet({ account, label = "Review My Profile" }: Pr
     }
 
     setPhase({ kind: "uploading", progress: 0 });
+    posthog.capture("submission_started", { files: files.length, mb: Math.round(totalBytes / 1e5) / 10, signed_in: Boolean(account) });
     try {
       const res = await fetch("/api/submissions", {
         method: "POST",
@@ -99,6 +101,7 @@ export default function SubmitSheet({ account, label = "Review My Profile" }: Pr
       const done = await fetch(`/api/submissions/${start.submissionId}/complete`, { method: "POST" });
       const result = await readJson<ApiResult>(done);
       if (!done.ok) throw new Error(result.error);
+      posthog.capture("submission_uploaded", { submission_id: start.submissionId, needs_payment: Boolean(result.checkoutUrl) });
       if (result.checkoutUrl) {
         // Files are uploaded; payment happens on Stripe, then they land on /home.
         setPhase({ kind: "paying" });
@@ -112,6 +115,7 @@ export default function SubmitSheet({ account, label = "Review My Profile" }: Pr
       router.push("/home");
       router.refresh();
     } catch (err) {
+      posthog.capture("submission_failed", { error: err instanceof Error ? err.message : String(err) });
       setPhase({ kind: "form" });
       setError(err instanceof Error && err.message && err.message !== "network" ? err.message : "Upload failed. Check your connection and try again.");
     }
@@ -127,7 +131,10 @@ export default function SubmitSheet({ account, label = "Review My Profile" }: Pr
       <button
         type="button"
         disabled={full}
-        onClick={() => dialog.current?.showModal()}
+        onClick={() => {
+          posthog.capture("get_my_score_clicked", { path: window.location.pathname, signed_in: Boolean(account) });
+          dialog.current?.showModal();
+        }}
         className="inline-flex items-center justify-center rounded-full bg-flame px-9 py-5 text-xl font-bold text-paper shadow-[0_10px_0_-2px_var(--flame-deep)] transition active:translate-y-1 active:shadow-[0_6px_0_-2px_var(--flame-deep)] hover:bg-flame-deep disabled:bg-line disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed"
       >
         {full ? "We're full — back soon" : label}

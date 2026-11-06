@@ -33,9 +33,46 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/home", request.url));
   }
 
+  if (path === "/") return landingSplit(request, response);
+
   return response;
 }
 
+const VARIANT_COOKIE = "lp_variant";
+
+/**
+ * Landing page A/B test: each visitor to "/" is assigned "guy" or "girl" once (sticky
+ * cookie) and the girl half is rewritten to /g, so the URL stays "/".
+ * Force one for testing with /?v=girl or /?v=guy.
+ */
+function landingSplit(request: NextRequest, response: NextResponse) {
+  const forced = request.nextUrl.searchParams.get("v");
+  const saved = request.cookies.get(VARIANT_COOKIE)?.value;
+  const variant =
+    forced === "guy" || forced === "girl"
+      ? forced
+      : saved === "guy" || saved === "girl"
+        ? saved
+        : Math.random() < 0.5
+          ? "guy"
+          : "girl";
+
+  let out = response;
+  if (variant === "girl") {
+    // Keep whatever the Supabase session refresh put on `response`.
+    out = NextResponse.rewrite(new URL("/g", request.url), { request });
+    response.cookies.getAll().forEach((c) => out.cookies.set(c));
+    response.headers.forEach((v, k) => {
+      const key = k.toLowerCase();
+      if (key !== "set-cookie" && !key.startsWith("x-middleware")) out.headers.set(k, v);
+    });
+  }
+  if (saved !== variant) {
+    out.cookies.set(VARIANT_COOKIE, variant, { path: "/", maxAge: 60 * 60 * 24 * 60, sameSite: "lax" });
+  }
+  return out;
+}
+
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/capacity|api/stripe/webhook|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/capacity|api/stripe/webhook|ingest|.*\\.(?:svg|png|jpg|jpeg|gif|webp|ico)$).*)"],
 };

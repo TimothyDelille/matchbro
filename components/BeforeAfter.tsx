@@ -3,6 +3,29 @@ import ScoreRing from "@/components/ScoreRing";
 const BEFORE = 34;
 const AFTER = 92;
 
+export type LandingVariant = "guy" | "girl";
+
+/** Only the photos (and the caption's noun) differ between variants. */
+const PHOTOS: Record<
+  LandingVariant,
+  { before: string; beforePos: string; after: string; afterPos: string; who: string }
+> = {
+  guy: {
+    before: "/landing_page_bad_pic.jpeg",
+    beforePos: "center 35%",
+    after: "/landing_page_good_pic.jpeg",
+    afterPos: "center 22%",
+    who: "guy",
+  },
+  girl: {
+    before: "/landing_page_girl_bad_pic.jpeg",
+    beforePos: "center 50%",
+    after: "/landing_page_girl_good_pic_2.JPG",
+    afterPos: "center 68%",
+    who: "girl",
+  },
+};
+
 function Phone({ children }: { children: React.ReactNode }) {
   return (
     <div className="w-[clamp(140px,43vw,168px)] sm:w-[232px] aspect-[9/18.5] rounded-[32px] sm:rounded-[38px] bg-ink p-[6px] sm:p-[7px] shadow-[0_30px_60px_-20px_rgb(23_18_28/0.45)]">
@@ -53,14 +76,15 @@ function Badge({ score, side }: { score: number; side: "left" | "right" }) {
   );
 }
 
-export default function BeforeAfter() {
+export default function BeforeAfter({ variant = "guy" }: { variant?: LandingVariant }) {
+  const p = PHOTOS[variant];
   return (
     <figure className="select-none">
       <div className="relative h-[clamp(332px,100vw,392px)] sm:h-[520px]" aria-hidden>
         {/* Before */}
         <div className="absolute left-1/2 top-10 -translate-x-[94%] sm:-translate-x-[97%] -rotate-[6deg]">
           <Phone>
-            <Photo src="/landing_page_bad_pic.jpeg" position="center 35%" />
+            <Photo src={p.before} position={p.beforePos} />
             <Prompt label="I'm looking for">Someone to cherish for the rest of my life</Prompt>
             <Prompt label="Pick our first date">
               Cozy café, then getting lost in a bookstore ☕📚
@@ -72,7 +96,7 @@ export default function BeforeAfter() {
         {/* After */}
         <div className="absolute left-1/2 top-2 -translate-x-[6%] sm:-translate-x-[3%] rotate-[4deg]">
           <Phone>
-            <Photo src="/landing_page_good_pic.jpeg" position="center 22%" />
+            <Photo src={p.after} position={p.afterPos} />
             <Prompt label="The key to my heart is">Open heart surgery</Prompt>
             <Prompt label="I bet you can't">Shut up.</Prompt>
           </Phone>
@@ -81,7 +105,7 @@ export default function BeforeAfter() {
       </div>
 
       <figcaption className="mt-5 sm:mt-6 text-center text-[15px] sm:text-base text-muted">
-        Same guy. <span className="font-bold text-ink">More likes.</span>
+        Same {p.who}. <span className="font-bold text-ink">More likes.</span>
       </figcaption>
     </figure>
   );
