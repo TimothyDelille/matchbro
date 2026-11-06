@@ -7,15 +7,17 @@ export default function ScoreCard({ scores }: { scores: Scores }) {
   if (total === null) return null;
 
   return (
-    <section className="mt-8 rounded-3xl border border-line">
-      <div className="flex flex-col items-center gap-4 px-5 pt-7 pb-6">
-        <h2 className="font-bold">Profile score</h2>
-        <ScoreRing score={total} />
-      </div>
-
-      <details className="group border-t border-line">
-        <summary className="flex min-h-14 cursor-pointer list-none items-center justify-between gap-4 rounded-b-3xl px-5 py-3 font-bold group-open:rounded-none [&::-webkit-details-marker]:hidden">
-          Breakdown
+    <section className="mt-6 rounded-2xl border border-line">
+      <details className="group">
+        <summary className="flex cursor-pointer list-none items-center gap-4 rounded-2xl px-4 py-3 [&::-webkit-details-marker]:hidden">
+          <ScoreRing score={total} size={64} />
+          <span className="min-w-0 flex-1">
+            <h2 className="font-bold">Profile score</h2>
+            <span className="text-sm text-muted">
+              <span className="group-open:hidden">See breakdown</span>
+              <span className="hidden group-open:inline">Hide breakdown</span>
+            </span>
+          </span>
           <span className="flex items-center gap-3">
             <span aria-hidden className="flex gap-1.5 group-open:hidden">
               {RUBRICS.map(({ key }) => {
@@ -46,7 +48,7 @@ export default function ScoreCard({ scores }: { scores: Scores }) {
           </span>
         </summary>
 
-        <ul className="divide-y divide-line px-5 pb-2">
+        <ul className="divide-y divide-line border-t border-line px-4 pb-1">
           {RUBRICS.map(({ key, label }) => {
             const s = scores[key];
             return (
