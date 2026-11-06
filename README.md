@@ -2,7 +2,7 @@
 
 Constructive dating profile reviews.
 
-Landing page + upload flow. Users drop in a screen recording of their profile and a few chats, enter their email (phone optional), and submit. We review submissions oldest first (users never see the queue) and publish a report they can read with their account.
+Landing page + upload flow. Users drop in screenshots of their profile, enter their email, and submit. We review submissions oldest first (users never see the queue) and publish a report they can read with their account.
 
 ## Setup
 
@@ -13,20 +13,20 @@ Landing page + upload flow. Users drop in a screen recording of their profile an
 
 ## How a submission flows
 
-1. `POST /api/submissions` validates the form, finds or creates the account (Supabase Auth user + `profiles` row, phone optional), reserves a slot with `reserve_submission()` and returns one signed upload URL per file.
+1. `POST /api/submissions` validates the form, finds or creates the account (Supabase Auth user + `profiles` row), reserves a slot with `reserve_submission()` and returns one signed upload URL per file.
 2. The browser uploads straight to the private `submissions` bucket (no file goes through the Next.js server, so Vercel's body limit doesn't matter) with a progress bar.
 3. `POST /api/submissions/:id/complete` checks what actually landed in storage. With payments on, it returns a Stripe Checkout URL and the submission is only marked `queued` once Stripe confirms payment (success page or webhook). With payments off, it's queued straight away. Details in `STRIPE.md`.
 4. You review submissions in `/admin` (see below). Publishing marks the submission `done`. Recordings are kept.
 
 ## Accounts and signing in
 
-Email + password, no emails sent. The first upload asks for email, an optional phone number and a password (6+ characters, Supabase's default minimum): `POST /api/submissions` creates the Supabase Auth user (already confirmed) plus a `profiles` row, and signs them in on the same response. After any upload the browser goes to `/home`, which lists their reviews and has a "Get reviewed" button that skips the account fields.
+Email only, no passwords. The first upload asks for just an email: `POST /api/submissions` creates the Supabase Auth user (already confirmed) with a random password nobody sees, plus a `profiles` row, and signs them in on the same response. After any upload the browser goes to `/home`, which lists their reviews and has a "Get reviewed" button that skips the email field.
 
-Returning users sign in at `/signin` with email + password. `proxy.ts` keeps the session fresh and sends signed-out visitors from `/home` to `/signin`.
+Returning users sign in at `/signin` with a one-time code: they enter their email, Supabase emails a code (and a link to `/auth/confirm`), and they type the code in. `shouldCreateUser: false`, so unknown emails are told to get a review first. "Use a password instead" is still there for admins and accounts created before email-only signup. `proxy.ts` keeps the session fresh and sends signed-out visitors from `/home` to `/signin`.
+
+**Email template:** in Supabase **Authentication > Emails > Magic Link**, the template must include `{{ .Token }}` so the code shows up in the email (the default template only has the link). Example body: `Your matchbro code is {{ .Token }}. Or <a href="{{ .ConfirmationURL }}">sign in with this link</a>.`
 
 If someone submits from the landing page with an email that already has an account, they're asked to sign in instead, so nobody can submit under someone else's account.
-
-Not built yet: password reset (needs email, see below).
 
 ## Admin: writing and publishing reviews
 
@@ -77,5 +77,5 @@ On Pro (100 GB) change `max_open_submissions` to something like 1800 with one SQ
 ## Before launch
 
 - Add rate limiting to `/api/submissions` (e.g. Vercel Firewall or Upstash) — right now anyone can create accounts for any email.
-- Email: set up custom SMTP (e.g. Resend) for password resets, and send "review ready" emails.
+- Email: set up custom SMTP (e.g. Resend) in Supabase. The built-in sender is rate-limited to a few emails an hour, which sign-in codes will hit fast. Then send "review ready" emails too.
 - Build the report page and the reviewer tool.

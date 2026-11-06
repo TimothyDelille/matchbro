@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { readJson, uploadToSignedUrl } from "@/lib/upload";
-import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES, MAX_SUBMISSION_MB, MIN_PASSWORD, normalizePhone } from "@/lib/limits";
+import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES, MAX_SUBMISSION_MB } from "@/lib/limits";
 
 type Phase = { kind: "form" } | { kind: "uploading"; progress: number } | { kind: "paying" };
 
@@ -15,6 +15,8 @@ function mb(bytes: number) {
 type Props = {
   /** Set when the visitor is signed in: no account fields, uses their session. */
   account?: { email: string };
+  /** Button text. Defaults to "Review My Profile". */
+  label?: string;
 };
 
 type ApiResult = {
@@ -25,15 +27,13 @@ type ApiResult = {
   checkoutUrl?: string;
 };
 
-export default function SubmitSheet({ account }: Props) {
+export default function SubmitSheet({ account, label = "Review My Profile" }: Props) {
   const router = useRouter();
   const dialog = useRef<HTMLDialogElement>(null);
   const [full, setFull] = useState(false);
   const [phase, setPhase] = useState<Phase>({ kind: "form" });
   const [files, setFiles] = useState<File[]>([]);
   const [email, setEmail] = useState(account?.email ?? "");
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -63,12 +63,10 @@ export default function SubmitSheet({ account }: Props) {
     setNeedsSignIn(false);
     const website = String(new FormData(e.currentTarget).get("website") ?? "");
 
-    if (!files.length) return setError("Add your screen recording first.");
-    if (tooBig) return setError(`Keep it under ${MAX_SUBMISSION_MB} MB total. A 60-second recording is plenty.`);
+    if (!files.length) return setError("Add your screenshots first.");
+    if (tooBig) return setError(`Keep it under ${MAX_SUBMISSION_MB} MB total.`);
     if (!account) {
       if (!EMAIL_RE.test(email.trim())) return setError("Enter a valid email address.");
-      if (phone.trim() && !normalizePhone(phone)) return setError("That phone number doesn't look right. Fix it or leave it blank.");
-      if (password.length < MIN_PASSWORD) return setError(`Use at least ${MIN_PASSWORD} characters for your password.`);
     }
 
     setPhase({ kind: "uploading", progress: 0 });
@@ -77,7 +75,7 @@ export default function SubmitSheet({ account }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(account ? {} : { email, phone, password }),
+          ...(account ? {} : { email }),
           website,
           files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
         }),
@@ -111,7 +109,6 @@ export default function SubmitSheet({ account }: Props) {
       dialog.current?.close();
       setPhase({ kind: "form" });
       setFiles([]);
-      setPassword("");
       router.push("/home");
       router.refresh();
     } catch (err) {
@@ -133,7 +130,7 @@ export default function SubmitSheet({ account }: Props) {
         onClick={() => dialog.current?.showModal()}
         className="inline-flex items-center justify-center rounded-full bg-flame px-9 py-5 text-xl font-bold text-paper shadow-[0_10px_0_-2px_var(--flame-deep)] transition active:translate-y-1 active:shadow-[0_6px_0_-2px_var(--flame-deep)] hover:bg-flame-deep disabled:bg-line disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed"
       >
-        {full ? "We're full — back soon" : "Review My Profile"}
+        {full ? "We're full — back soon" : label}
       </button>
 
       <dialog
@@ -147,7 +144,7 @@ export default function SubmitSheet({ account }: Props) {
         <div className="p-6 sm:p-8 text-left">
             <form onSubmit={submit} noValidate>
               <div className="flex items-start justify-between">
-                <h2 className="text-3xl font-extrabold tracking-tight">Send it over</h2>
+                <h2 className="text-3xl font-extrabold tracking-tight">What&apos;s your score?</h2>
                 <button
                   type="button"
                   onClick={close}
@@ -185,8 +182,8 @@ export default function SubmitSheet({ account }: Props) {
                   }}
                   disabled={busy}
                 />
-                <span className="font-bold">Add your screen recording</span>
-                <span className="mt-1 text-sm text-muted">Your profile and a few chats, up to {MAX_SUBMISSION_MB} MB</span>
+                <span className="font-bold">Add your screenshots</span>
+                <span className="mt-1 text-sm text-muted">Pictures, prompts: include as much as possible</span>
               </label>
 
               {files.length > 0 && (
@@ -219,36 +216,20 @@ export default function SubmitSheet({ account }: Props) {
                   Signed in as <span className="text-ink font-medium">{account.email}</span>
                 </p>
               ) : (
-              <div className="mt-5 space-y-3">
+              <div className="mt-5">
                 <input
                   type="email"
+                  inputMode="email"
                   autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   placeholder="Email"
                   aria-label="Email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   disabled={busy}
-                  className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 outline-none focus:border-ink"
-                />
-                <input
-                  type="tel"
-                  autoComplete="tel"
-                  placeholder="Phone (optional)"
-                  aria-label="Phone (optional)"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  disabled={busy}
-                  className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 outline-none focus:border-ink"
-                />
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  placeholder={`Create a password (${MIN_PASSWORD}+ characters)`}
-                  aria-label="Create a password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={busy}
-                  className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 outline-none focus:border-ink"
+                  className="w-full rounded-xl border border-line bg-paper px-4 py-3.5 text-base outline-none focus:border-ink"
                 />
                 {/* honeypot */}
                 <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden />
@@ -285,12 +266,9 @@ export default function SubmitSheet({ account }: Props) {
                     ? `Uploading ${Math.round(phase.progress * 100)}%`
                     : phase.kind === "paying"
                       ? "One sec…"
-                      : "Review my profile"}
+                      : "Get my score"}
                 </span>
               </button>
-              <p className="mt-3 text-center text-xs text-muted">
-                {account ? "Only you and our reviewer can see your recording." : "This creates your account. Only you and our reviewer can see your recording."}
-              </p>
             </form>
         </div>
       </dialog>

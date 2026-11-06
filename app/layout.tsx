@@ -4,8 +4,8 @@ import "@fontsource-variable/bricolage-grotesque";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "matchbro.app — dating profile reviews",
-  description: "Show us your dating profile. Get back actionable feedback that gets matches.",
+  title: "matchbro.app — get your dating profile score",
+  description: "Send your dating profile and get a score out of 100, plus exactly what to fix to get more matches.",
 };
 
 export const viewport: Viewport = {

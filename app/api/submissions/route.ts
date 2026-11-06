@@ -1,6 +1,7 @@
+import { randomBytes } from "node:crypto";
 import { BUCKET, configError, createAccount, getSetting, supabaseAdmin, sweepExpiredUploads } from "@/lib/supabase/admin";
 import { currentUser, supabaseServer } from "@/lib/supabase/server";
-import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES, MIN_PASSWORD, normalizePhone } from "@/lib/limits";
+import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES } from "@/lib/limits";
 
 type FileMeta = { name: string; type: string; size: number };
 
@@ -14,7 +15,7 @@ export async function POST(req: Request) {
   const misconfigured = configError();
   if (misconfigured) return fail(misconfigured, 500);
 
-  let body: { email?: string; phone?: string; password?: string; files?: FileMeta[]; website?: string };
+  let body: { email?: string; files?: FileMeta[]; website?: string };
   try {
     body = await req.json();
   } catch {
@@ -25,16 +26,10 @@ export async function POST(req: Request) {
 
   const sessionUser = await currentUser();
   const email = (body.email ?? "").trim().toLowerCase();
-  const rawPhone = (body.phone ?? "").trim();
-  const phone = rawPhone ? normalizePhone(rawPhone) : null; // optional
   const files = Array.isArray(body.files) ? body.files : [];
 
   if (!sessionUser) {
     if (!EMAIL_RE.test(email)) return fail("Enter a valid email address.");
-    if (rawPhone && !phone) return fail("That phone number doesn't look right. Fix it or leave it blank.");
-    if (typeof body.password !== "string" || body.password.length < MIN_PASSWORD) {
-      return fail(`Use at least ${MIN_PASSWORD} characters for your password.`);
-    }
   }
   if (files.length === 0) return fail("Add at least one recording or screenshot.");
   if (files.length > MAX_FILES) return fail(`You can add up to ${MAX_FILES} files.`);
@@ -56,7 +51,10 @@ export async function POST(req: Request) {
     userId = sessionUser.id;
   } else {
     try {
-      const created = await createAccount(email, phone, body.password!);
+      // Email-only signup: a random password nobody sees, used once to start the session.
+      // They sign in later with a one-time code sent to their email (/signin).
+      const password = randomBytes(24).toString("base64url");
+      const created = await createAccount(email, null, password);
       if (!created) {
         return Response.json(
           { error: "You already have an account with this email. Sign in to send another profile.", signIn: true },
@@ -67,13 +65,10 @@ export async function POST(req: Request) {
       // Sign them in right away (sets the session cookie on this response).
       const { error: signInError } = await (await supabaseServer()).auth.signInWithPassword({
         email,
-        password: body.password!,
+        password,
       });
       if (signInError) console.error("sign in after sign up", signInError);
     } catch (e) {
-      if ((e as { code?: string })?.code === "weak_password") {
-        return fail("That password is too easy to guess. Try a longer one.");
-      }
       console.error("account", e);
       return fail("We couldn't create your account. Try again.", 500);
     }
