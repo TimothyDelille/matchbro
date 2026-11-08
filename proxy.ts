@@ -48,14 +48,15 @@ const VARIANT_COOKIE = "lp_variant";
 function landingSplit(request: NextRequest, response: NextResponse) {
   const forced = request.nextUrl.searchParams.get("v");
   const saved = request.cookies.get(VARIANT_COOKIE)?.value;
-  const variant =
-    forced === "guy" || forced === "girl"
-      ? forced
-      : saved === "guy" || saved === "girl"
-        ? saved
-        : Math.random() < 0.5
-          ? "guy"
-          : "girl";
+  // const variant =
+  //   forced === "guy" || forced === "girl"
+  //     ? forced
+  //     : saved === "guy" || saved === "girl"
+  //       ? saved
+  //       : Math.random() < 0.5
+  //         ? "guy"
+  //         : "girl";
+  const variant = "girl";
 
   let out = response;
   if (variant === "girl") {
