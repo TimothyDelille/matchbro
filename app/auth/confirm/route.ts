@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { supabaseServer } from "@/lib/supabase/server";
+import { safeNextPath } from "@/lib/next-path";
 
 /** Landing spot for the sign-in link in the email (works alongside the 6-digit code). */
 export async function GET(request: NextRequest) {
@@ -18,5 +19,7 @@ export async function GET(request: NextRequest) {
     ok = !(await supabase.auth.verifyOtp({ token_hash: tokenHash, type })).error;
   }
 
-  return NextResponse.redirect(new URL(ok ? "/home" : "/signin?expired=1", request.url));
+  const next = safeNextPath(searchParams.get("next"));
+  const destination = ok ? (next ?? "/home") : `/signin?expired=1${next ? `&next=${encodeURIComponent(next)}` : ""}`;
+  return NextResponse.redirect(new URL(destination, request.url));
 }

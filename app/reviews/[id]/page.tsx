@@ -13,6 +13,7 @@ import { confirmCheckout, isLocked, roastPriceLabel } from "@/lib/stripe";
 import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
+import { signInUrl } from "@/lib/next-path";
 
 const dateFmt = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" });
 
@@ -46,7 +47,7 @@ async function Review({
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) redirect("/signin");
+  if (!user) redirect(signInUrl(`/reviews/${id}`));
   const admin = isAdmin(user);
 
   // Back from unlocking on Stripe: confirm right away instead of waiting for the webhook.

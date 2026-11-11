@@ -2,10 +2,11 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { User } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { EMAIL_RE } from "@/lib/limits";
+import { safeNextPath } from "@/lib/next-path";
 
 const input =
   "w-full rounded-xl border border-line bg-paper px-4 py-3.5 text-base outline-none focus:border-ink disabled:opacity-60";
@@ -24,6 +25,8 @@ const OTP_LENGTH = 6;
 
 export default function SignInForm() {
   const router = useRouter();
+  // e.g. /signin?next=/reviews/abc from a review link: go back there after signing in.
+  const next = safeNextPath(useSearchParams().get("next"));
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -35,7 +38,7 @@ export default function SignInForm() {
   const clean = email.trim().toLowerCase();
 
   function done(user: User | null) {
-    router.replace(user?.app_metadata?.role === "admin" ? "/admin" : "/home");
+    router.replace(next ?? (user?.app_metadata?.role === "admin" ? "/admin" : "/home"));
     router.refresh();
   }
 
@@ -47,7 +50,10 @@ export default function SignInForm() {
     setNotice(null);
     const { error } = await supabaseBrowser().auth.signInWithOtp({
       email: clean,
-      options: { shouldCreateUser: false, emailRedirectTo: `${location.origin}/auth/confirm` },
+      options: {
+        shouldCreateUser: false,
+        emailRedirectTo: `${location.origin}/auth/confirm${next ? `?next=${encodeURIComponent(next)}` : ""}`,
+      },
     });
     setBusy(false);
     if (error) {
