@@ -1,5 +1,4 @@
 import UnlockButton from "@/components/UnlockButton";
-import type { UnlockOffer } from "@/lib/stripe";
 
 /**
  * Stand-in text for a locked review. The real report never reaches the page
@@ -30,11 +29,12 @@ const PLACEHOLDER = [
 
 export default function LockedReport({
   submissionId,
-  offer,
+  priceLabel,
   preview = false,
 }: {
   submissionId: string;
-  offer: UnlockOffer | null;
+  /** "$2.99", or null if Stripe isn't reachable (the button then leaves the price out). */
+  priceLabel: string | null;
   /** An admin previewing the user's locked view. */
   preview?: boolean;
 }) {
@@ -63,26 +63,15 @@ export default function LockedReport({
         section the sticky scroll container and break the centring.
       */}
       <div className="absolute inset-0 px-2">
-        <div className="sticky top-[max(1rem,calc(50svh-9rem))] flex justify-center">
+        <div className="sticky top-[max(1rem,calc(50svh-8rem))] flex justify-center">
           <div className="w-full max-w-md rounded-3xl border border-line bg-paper p-6 sm:p-7 text-center shadow-2xl shadow-ink/10">
             <h2 id="unlock-heading" className="text-2xl font-extrabold tracking-tight">
               Your full review is ready 🔥
             </h2>
             <p className="mt-2 text-muted">+ a free follow-up if you have a question.</p>
 
-            {offer?.regularLabel && (
-              <p className="mt-5 flex items-center justify-center gap-3">
-                <s className="text-lg font-semibold text-muted decoration-2">{offer.regularLabel}</s>
-                {offer.percentOff !== null && (
-                  <span className="rounded-full bg-butter px-3 py-1 text-sm font-extrabold text-ink">
-                    {offer.percentOff}% off
-                  </span>
-                )}
-              </p>
-            )}
-
-            <div className={offer?.regularLabel ? "mt-3" : "mt-5"}>
-              <UnlockButton submissionId={submissionId} priceLabel={offer?.label ?? null} preview={preview} />
+            <div className="mt-5">
+              <UnlockButton submissionId={submissionId} priceLabel={priceLabel} preview={preview} />
             </div>
             <p className="mt-3 text-xs text-muted">One-time payment. Yours to keep.</p>
           </div>

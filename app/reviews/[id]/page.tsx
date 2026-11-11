@@ -9,7 +9,7 @@ import ScoreCard from "@/components/ScoreCard";
 import { isAdmin } from "@/lib/admin-auth";
 import { referencedAssets, signAssets, signSubmissionMedia } from "@/lib/report";
 import { SCORE_COLUMNS, scoresFromRow } from "@/lib/score";
-import { confirmCheckout, isLocked, unlockOffer } from "@/lib/stripe";
+import { confirmCheckout, isLocked, roastPriceLabel } from "@/lib/stripe";
 import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -73,10 +73,10 @@ async function Review({
     .maybeSingle();
   if (!report || (!report.published_at && !admin)) notFound();
 
-  const [assets, media, offer, followUp] = await Promise.all([
+  const [assets, media, priceLabel, followUp] = await Promise.all([
     locked ? {} : signAssets(report.user_id, id, referencedAssets(report.markdown, report.audio_path)),
     locked ? [] : signSubmissionMedia(sub.file_paths ?? []),
-    locked ? unlockOffer() : null,
+    locked ? roastPriceLabel() : null,
     locked
       ? null
       : (admin ? supabaseAdmin() : supabase)
@@ -118,7 +118,7 @@ async function Review({
       {/* Locked: skip their uploads so the paywall sits right under the score. */}
       {!locked && <MediaCarousel items={media} />}
 
-      {locked && <LockedReport submissionId={id} offer={offer} preview={report.user_id !== user.id} />}
+      {locked && <LockedReport submissionId={id} priceLabel={priceLabel} preview={report.user_id !== user.id} />}
 
       {audio && (
         <div className="mt-10 rounded-3xl bg-ink p-5 sm:p-6 text-paper">

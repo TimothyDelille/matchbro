@@ -9,14 +9,6 @@ import { BUCKET, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
  */
 export const PRICE_LOOKUP_KEY = process.env.STRIPE_PRICE_LOOKUP_KEY ?? "roast";
 
-/**
- * The "regular" price shown struck through next to the real one (lookup key
- * "roast_regular"); it's never charged. The "% off" is worked out from the two
- * prices, so it stays right if either changes. Remove the price (or its lookup
- * key) in Stripe to stop showing a discount.
- */
-export const REGULAR_PRICE_LOOKUP_KEY = process.env.STRIPE_REGULAR_PRICE_LOOKUP_KEY ?? "roast_regular";
-
 /** Checkout Sessions can't expire sooner than 30 minutes. */
 const SESSION_TTL_SECONDS = 30 * 60;
 
@@ -58,7 +50,6 @@ async function getPrice(lookupKey: string): Promise<Stripe.Price> {
 }
 
 export const getRoastPrice = () => getPrice(PRICE_LOOKUP_KEY);
-const getRegularPrice = () => getPrice(REGULAR_PRICE_LOOKUP_KEY);
 
 const formatPrice = (price: Stripe.Price) =>
   new Intl.NumberFormat("en-US", { style: "currency", currency: price.currency }).format(price.unit_amount! / 100);
@@ -73,28 +64,38 @@ export async function roastPriceLabel(): Promise<string | null> {
   }
 }
 
-export type UnlockOffer = { label: string; regularLabel: string | null; percentOff: number | null };
-
-/** "$2.99", plus the struck-through regular "$9.99" and "70" (% off) when it's higher. Null if Stripe isn't set up. */
-export async function unlockOffer(): Promise<UnlockOffer | null> {
-  try {
-    const [unlock, regular] = await Promise.all([getRoastPrice(), getRegularPrice().catch(() => null)]);
-    const discounted = regular && regular.currency === unlock.currency && regular.unit_amount! > unlock.unit_amount!;
-    return {
-      label: formatPrice(unlock),
-      regularLabel: discounted ? formatPrice(regular) : null,
-      percentOff: discounted ? Math.round(100 * (1 - unlock.unit_amount! / regular.unit_amount!)) : null,
-    };
-  } catch (e) {
-    console.error("unlock price", e);
-    return null;
-  }
-}
-
 /** Minutes left before reserve_submission expires an unfinished upload (and the sweeper deletes its files). */
 export async function uploadMinutesLeft(createdAt: string): Promise<number> {
   const window = await getSetting("upload_window_minutes");
   return window - (Date.now() - new Date(createdAt).getTime()) / 60_000;
+}
+
+/** Is STRIPE_SECRET_KEY a live key? Sessions from the other mode can't be read with it. */
+const keyIsLive = () => /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "");
+
+/**
+ * This submission's pending Checkout Sessions, newest first, as Stripe sees them now.
+ * Skips sessions created in the other mode (e.g. a live session when running
+ * locally on a sandbox key) and any Stripe no longer has, instead of failing.
+ */
+async function pendingSessions(submissionId: string, limit: number): Promise<Stripe.Checkout.Session[]> {
+  const { data } = await supabaseAdmin()
+    .from("payments")
+    .select("stripe_session_id")
+    .eq("submission_id", submissionId)
+    .eq("status", "pending")
+    .eq("livemode", keyIsLive())
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  const sessions: Stripe.Checkout.Session[] = [];
+  for (const p of data ?? []) {
+    try {
+      sessions.push(await stripe().checkout.sessions.retrieve(p.stripe_session_id));
+    } catch (e) {
+      console.warn("skipping unreadable checkout session", p.stripe_session_id, (e as Error).message);
+    }
+  }
+  return sessions;
 }
 
 export class CheckoutError extends Error {
@@ -124,15 +125,8 @@ export async function checkoutForSubmission(
   if (!files?.length) throw new CheckoutError("We couldn't find your upload. Send it again.", 400);
 
   // Reuse an open session (double clicks, coming back from the Stripe page).
-  const { data: pending } = await db
-    .from("payments")
-    .select("stripe_session_id")
-    .eq("submission_id", sub.id)
-    .eq("status", "pending")
-    .order("created_at", { ascending: false })
-    .limit(1);
-  if (pending?.length) {
-    const existing = await stripe().checkout.sessions.retrieve(pending[0].stripe_session_id);
+  const [existing] = await pendingSessions(sub.id, 1);
+  if (existing) {
     // Only reuse it if it's still at the current price (prices can change while a session is open).
     if (existing.status === "open" && existing.url && existing.amount_total === (await getRoastPrice()).unit_amount) {
       return existing.url;
@@ -190,15 +184,7 @@ export async function checkoutForUnlock(
 
   // Reuse an open unlock session. A pending session for the original upload
   // payment is left alone (it's for a different price).
-  const { data: pending } = await db
-    .from("payments")
-    .select("stripe_session_id")
-    .eq("submission_id", sub.id)
-    .eq("status", "pending")
-    .order("created_at", { ascending: false })
-    .limit(5);
-  for (const p of pending ?? []) {
-    const existing = await stripe().checkout.sessions.retrieve(p.stripe_session_id);
+  for (const existing of await pendingSessions(sub.id, 5)) {
     if (existing.payment_status === "paid") {
       await markSessionPaid(existing);
       return `${reviewUrl}?session_id=${existing.id}`;
