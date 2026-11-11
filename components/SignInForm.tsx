@@ -226,7 +226,6 @@ export default function SignInForm() {
       >
         Use a password instead
       </button> */}
-      <p className={`text-sm text-muted mt-6`}>Check your junk mail for the sign-in code!</p>
       <p className="mt-8 text-sm text-muted">
         New here? Your account is created with your first review.{" "}
         <Link href="/" className="text-ink underline underline-offset-4">
