@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
+import { safeNextPath, signInUrl } from "@/lib/next-path";
 
 /** Keeps the Supabase session fresh and guards the signed-in pages. */
 export async function proxy(request: NextRequest) {
@@ -26,11 +27,14 @@ export async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
   const path = request.nextUrl.pathname;
 
+  // Signed out: sign in, then come back to the page they asked for (e.g. a review link).
   if (!user && ["/home", "/reviews", "/roasts", "/admin"].some((p) => path.startsWith(p))) {
-    return NextResponse.redirect(new URL("/signin", request.url));
+    return NextResponse.redirect(new URL(signInUrl(path + request.nextUrl.search), request.url));
   }
+  // Already signed in: skip the form and go straight there.
   if (user && path.startsWith("/signin")) {
-    return NextResponse.redirect(new URL("/home", request.url));
+    const next = safeNextPath(request.nextUrl.searchParams.get("next"));
+    return NextResponse.redirect(new URL(next ?? "/home", request.url));
   }
 
   if (path === "/") return landingSplit(request, response);
