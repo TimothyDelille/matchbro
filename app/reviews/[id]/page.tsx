@@ -97,7 +97,7 @@ async function Review({
 
       {payment === "paid" && (
         <p role="status" className="mt-6 rounded-2xl bg-flame/10 px-5 py-4 font-medium">
-          Unlocked. Enjoy the full roast 🔥
+          Your full profile review is unlocked! 🔓
         </p>
       )}
       {payment === "pending" && (
