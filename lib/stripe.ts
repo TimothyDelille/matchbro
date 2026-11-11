@@ -9,6 +9,14 @@ import { BUCKET, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
  */
 export const PRICE_LOOKUP_KEY = process.env.STRIPE_PRICE_LOOKUP_KEY ?? "roast";
 
+/**
+ * The "regular" price shown struck through next to the real one (lookup key
+ * "roast_regular"); it's never charged. The "% off" is worked out from the two
+ * prices, so it stays right if either changes. Remove the price (or its lookup
+ * key) in Stripe to stop showing a discount.
+ */
+export const REGULAR_PRICE_LOOKUP_KEY = process.env.STRIPE_REGULAR_PRICE_LOOKUP_KEY ?? "roast_regular";
+
 /** Checkout Sessions can't expire sooner than 30 minutes. */
 const SESSION_TTL_SECONDS = 30 * 60;
 
@@ -32,31 +40,53 @@ export async function paymentsRequired(): Promise<boolean> {
   return (await getSetting("payments_required")) === 1;
 }
 
-let cachedPrice: { price: Stripe.Price; at: number } | null = null;
+const priceCache = new Map<string, { price: Stripe.Price; at: number }>();
 
-export async function getRoastPrice(): Promise<Stripe.Price> {
-  if (cachedPrice && Date.now() - cachedPrice.at < 60_000) return cachedPrice.price;
+async function getPrice(lookupKey: string): Promise<Stripe.Price> {
+  const cached = priceCache.get(lookupKey);
+  if (cached && Date.now() - cached.at < 60_000) return cached.price;
   const { data } = await stripe().prices.list({
-    lookup_keys: [PRICE_LOOKUP_KEY],
+    lookup_keys: [lookupKey],
     active: true,
     limit: 1,
   });
   if (!data.length || data[0].unit_amount == null) {
-    throw new Error(`No active Stripe price with lookup key "${PRICE_LOOKUP_KEY}"`);
+    throw new Error(`No active Stripe price with lookup key "${lookupKey}"`);
   }
-  cachedPrice = { price: data[0], at: Date.now() };
+  priceCache.set(lookupKey, { price: data[0], at: Date.now() });
   return data[0];
 }
+
+export const getRoastPrice = () => getPrice(PRICE_LOOKUP_KEY);
+const getRegularPrice = () => getPrice(REGULAR_PRICE_LOOKUP_KEY);
+
+const formatPrice = (price: Stripe.Price) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: price.currency }).format(price.unit_amount! / 100);
 
 /** "$9.99", or null if Stripe isn't configured (so pages still render). */
 export async function roastPriceLabel(): Promise<string | null> {
   try {
-    const price = await getRoastPrice();
-    return new Intl.NumberFormat("en-US", { style: "currency", currency: price.currency }).format(
-      price.unit_amount! / 100,
-    );
+    return formatPrice(await getRoastPrice());
   } catch (e) {
     console.error("price", e);
+    return null;
+  }
+}
+
+export type UnlockOffer = { label: string; regularLabel: string | null; percentOff: number | null };
+
+/** "$2.99", plus the struck-through regular "$9.99" and "70" (% off) when it's higher. Null if Stripe isn't set up. */
+export async function unlockOffer(): Promise<UnlockOffer | null> {
+  try {
+    const [unlock, regular] = await Promise.all([getRoastPrice(), getRegularPrice().catch(() => null)]);
+    const discounted = regular && regular.currency === unlock.currency && regular.unit_amount! > unlock.unit_amount!;
+    return {
+      label: formatPrice(unlock),
+      regularLabel: discounted ? formatPrice(regular) : null,
+      percentOff: discounted ? Math.round(100 * (1 - unlock.unit_amount! / regular.unit_amount!)) : null,
+    };
+  } catch (e) {
+    console.error("unlock price", e);
     return null;
   }
 }
@@ -103,7 +133,10 @@ export async function checkoutForSubmission(
     .limit(1);
   if (pending?.length) {
     const existing = await stripe().checkout.sessions.retrieve(pending[0].stripe_session_id);
-    if (existing.status === "open" && existing.url) return existing.url;
+    // Only reuse it if it's still at the current price (prices can change while a session is open).
+    if (existing.status === "open" && existing.url && existing.amount_total === (await getRoastPrice()).unit_amount) {
+      return existing.url;
+    }
     if (existing.payment_status === "paid") {
       await markSessionPaid(existing);
       return `${origin}/home?session_id=${existing.id}`;
@@ -123,6 +156,76 @@ export async function checkoutForSubmission(
     payment_intent_data: { metadata },
     success_url: `${origin}/home?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/home?checkout=cancelled`,
+    expires_at: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
+  });
+
+  const { error } = await db.from("payments").insert({
+    submission_id: sub.id,
+    user_id: sub.user_id,
+    stripe_session_id: session.id,
+    livemode: session.livemode,
+  });
+  if (error) throw error;
+
+  if (!session.url) throw new Error("Stripe returned no checkout URL");
+  return session.url;
+}
+
+/** A review an admin published before payment, still waiting to be unlocked. */
+export const isLocked = (sub: { unlock_required: boolean; paid_at: string | null }) =>
+  sub.unlock_required && !sub.paid_at;
+
+/**
+ * Create (or reuse) a Checkout Session to unlock a review that was published
+ * before payment. Caller must already have checked the submission belongs to this user.
+ */
+export async function checkoutForUnlock(
+  sub: { id: string; user_id: string; status: string; unlock_required: boolean; paid_at: string | null },
+  origin: string,
+): Promise<string> {
+  if (sub.status !== "done" || !isLocked(sub)) throw new CheckoutError("This review is already unlocked.", 409);
+
+  const db = supabaseAdmin();
+  const reviewUrl = `${origin}/reviews/${sub.id}`;
+
+  // Reuse an open unlock session. A pending session for the original upload
+  // payment is left alone (it's for a different price).
+  const { data: pending } = await db
+    .from("payments")
+    .select("stripe_session_id")
+    .eq("submission_id", sub.id)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(5);
+  for (const p of pending ?? []) {
+    const existing = await stripe().checkout.sessions.retrieve(p.stripe_session_id);
+    if (existing.payment_status === "paid") {
+      await markSessionPaid(existing);
+      return `${reviewUrl}?session_id=${existing.id}`;
+    }
+    if (
+      existing.metadata?.kind === "unlock" &&
+      existing.status === "open" &&
+      existing.url &&
+      existing.amount_total === (await getRoastPrice()).unit_amount
+    ) {
+      return existing.url;
+    }
+  }
+
+  const { data: profile } = await db.from("profiles").select("email").eq("id", sub.user_id).maybeSingle();
+  const price = await getRoastPrice();
+  const metadata = { submission_id: sub.id, user_id: sub.user_id, kind: "unlock" };
+
+  const session = await stripe().checkout.sessions.create({
+    mode: "payment",
+    line_items: [{ price: price.id, quantity: 1 }],
+    client_reference_id: sub.id,
+    customer_email: profile?.email ?? undefined,
+    metadata,
+    payment_intent_data: { metadata },
+    success_url: `${reviewUrl}?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: reviewUrl,
     expires_at: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
   });
 

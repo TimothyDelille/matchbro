@@ -15,6 +15,7 @@ type Row = {
   paid_at: string | null;
   total_bytes: number;
   file_paths: string[];
+  unlock_required: boolean;
 };
 
 const when = new Intl.DateTimeFormat("en-US", {
@@ -45,7 +46,7 @@ async function Submissions() {
 
   const { data } = await db
     .from("submissions")
-    .select("id, user_id, status, submitted_at, created_at, paid_at, total_bytes, file_paths")
+    .select("id, user_id, status, submitted_at, created_at, paid_at, total_bytes, file_paths, unlock_required")
     .in("status", ["uploading", "queued", "reviewing", "done"])
     .order("created_at", { ascending: true });
   // "uploading" = files sent but not paid yet. Skip ones with no files (swept/abandoned).
@@ -53,7 +54,14 @@ async function Submissions() {
     .filter((r) => r.status !== "uploading" || r.file_paths.length > 0)
     .sort((a, b) => sortTime(a) - sortTime(b));
 
-  const ids = [...new Set(rows.map((r) => r.user_id))];
+  // Free follow-up questions waiting for an answer, oldest first.
+  const { data: questions } = await db
+    .from("follow_ups")
+    .select("submission_id, user_id, question, created_at")
+    .is("answered_at", null)
+    .order("created_at", { ascending: true });
+
+  const ids = [...new Set([...rows.map((r) => r.user_id), ...(questions ?? []).map((q) => q.user_id)])];
   const { data: profiles } = ids.length
     ? await db.from("profiles").select("id, email, phone").in("id", ids)
     : { data: [] };
@@ -65,6 +73,7 @@ async function Submissions() {
 
   return (
     <>
+      <Questions questions={questions ?? []} who={who} />
       <Group title="To review" empty="Nothing waiting. Nice." rows={open} who={who} />
       <Group title="Unpaid" empty="No unpaid submissions." rows={unpaid} who={who} />
       <Group title="Reviewed" empty="No reviews published yet." rows={done} who={who} />
@@ -105,7 +114,7 @@ function Group({
                     {p?.email ?? "Unknown user"}
                     <span className="ml-3 font-normal text-muted">{p?.phone}</span>
                   </span>
-                  <PaidPill paidAt={r.paid_at} />
+                  <PaidPill paidAt={r.paid_at} locked={r.unlock_required} />
                   <StatusPill status={r.status} />
                 </Link>
               </li>
@@ -113,6 +122,40 @@ function Group({
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+function Questions({
+  questions,
+  who,
+}: {
+  questions: { submission_id: string; user_id: string; question: string; created_at: string }[];
+  who: Map<string, { email: string; phone: string | null }>;
+}) {
+  if (questions.length === 0) return null;
+  return (
+    <div className="mt-12">
+      <h2 className="text-xl font-bold">
+        Follow-up questions <span className="text-muted font-medium">{questions.length}</span>
+      </h2>
+      <ul className="mt-4 divide-y divide-line border-y border-line">
+        {questions.map((q) => (
+          <li key={q.submission_id}>
+            <Link
+              href={`/admin/submissions/${q.submission_id}#follow-up`}
+              className="grid grid-cols-[1fr_auto] sm:grid-cols-[9rem_1fr_auto] items-center gap-x-4 gap-y-1 py-4 hover:bg-line/40 -mx-3 px-3 rounded-xl"
+            >
+              <span className="text-muted tabular-nums">{when.format(new Date(q.created_at))}</span>
+              <span className="min-w-0 sm:order-none order-first col-span-2 sm:col-span-1">
+                <span className="block truncate font-semibold">{who.get(q.user_id)?.email ?? "Unknown user"}</span>
+                <span className="block truncate text-muted">{q.question}</span>
+              </span>
+              <span className="rounded-full bg-flame px-3 py-1 text-sm font-semibold text-paper">💬 Answer</span>
+            </Link>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

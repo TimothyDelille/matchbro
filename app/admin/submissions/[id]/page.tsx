@@ -7,6 +7,8 @@ import { referencedAssets, signAssets } from "@/lib/report";
 import AdminHeader from "@/components/admin/AdminHeader";
 import ReportEditor from "@/components/admin/ReportEditor";
 import PaidPill from "@/components/admin/PaidPill";
+import FollowUpAnswer from "@/components/admin/FollowUpAnswer";
+import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { SCORE_COLUMNS, scoresFromRow } from "@/lib/score";
 
 const when = new Intl.DateTimeFormat("en-US", {
@@ -33,12 +35,12 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
 
   const { data: sub } = await db
     .from("submissions")
-    .select("id, user_id, status, submitted_at, created_at, paid_at, file_paths")
+    .select("id, user_id, status, submitted_at, created_at, paid_at, file_paths, unlock_required")
     .eq("id", id)
     .maybeSingle();
   if (!sub || !["uploading", "queued", "reviewing", "done"].includes(sub.status)) notFound();
 
-  const [{ data: profile }, { data: report }, { data: signed }] = await Promise.all([
+  const [{ data: profile }, { data: report }, { data: signed }, { data: followUp }] = await Promise.all([
     db.from("profiles").select("email, phone").eq("id", sub.user_id).maybeSingle(),
     db
       .from("reports")
@@ -48,6 +50,7 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
     sub.file_paths.length
       ? db.storage.from(BUCKET).createSignedUrls(sub.file_paths, 3600)
       : Promise.resolve({ data: [] as { signedUrl: string | null; path: string | null }[] }),
+    db.from("follow_ups").select(FOLLOW_UP_COLUMNS).eq("submission_id", id).maybeSingle<FollowUp>(),
   ]);
 
   const media = (signed ?? [])
@@ -72,7 +75,7 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
             : `Uploaded ${when.format(new Date(sub.created_at))} · not paid yet`}
         </span>
         <span title={sub.paid_at ? `Paid ${when.format(new Date(sub.paid_at))}` : "No payment on record"}>
-          <PaidPill paidAt={sub.paid_at} />
+          <PaidPill paidAt={sub.paid_at} locked={sub.unlock_required} />
         </span>
       </div>
 
@@ -88,8 +91,12 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
           )}
         </aside>
 
-        <ReportEditor
+        <div className="space-y-6">
+          {followUp && <FollowUpAnswer submissionId={id} initial={followUp} />}
+          <ReportEditor
           submissionId={id}
+          unpaid={sub.status === "uploading"}
+          locked={sub.unlock_required && !sub.paid_at}
           initial={{
             markdown,
             audioPath,
@@ -99,6 +106,7 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
           }}
           assets={assets}
         />
+        </div>
       </div>
     </div>
   );

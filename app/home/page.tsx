@@ -5,7 +5,7 @@ import PayButton from "@/components/PayButton";
 import SubmitSheet from "@/components/SubmitSheet";
 import { supabaseServer } from "@/lib/supabase/server";
 import { getSetting } from "@/lib/supabase/admin";
-import { checkoutPriceLabel, confirmCheckout } from "@/lib/stripe";
+import { checkoutPriceLabel, confirmCheckout, isLocked } from "@/lib/stripe";
 
 type Submission = {
   id: string;
@@ -13,6 +13,8 @@ type Submission = {
   submitted_at: string | null;
   created_at: string;
   file_paths: string[];
+  unlock_required: boolean;
+  paid_at: string | null;
 };
 
 /** Unpaid uploads are only resumable while there's room for a 30-minute Checkout Session. */
@@ -78,16 +80,18 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
   const payment = sessionId ? await confirmCheckout(sessionId, user.id) : null;
   const cancelled = params.checkout === "cancelled";
 
-  const [{ data }, priceLabel, windowMinutes] = await Promise.all([
+  const [{ data }, priceLabel, windowMinutes, { data: followUps }] = await Promise.all([
     supabase
       .from("submissions")
-      .select("id, status, submitted_at, created_at, file_paths")
+      .select("id, status, submitted_at, created_at, file_paths, unlock_required, paid_at")
       .in("status", ["uploading", "queued", "reviewing", "done"])
       .order("submitted_at", { ascending: false, nullsFirst: true })
       .order("created_at", { ascending: false }),
     checkoutPriceLabel(),
     getSetting("upload_window_minutes"),
+    supabase.from("follow_ups").select("submission_id, answered_at"),
   ]);
+  const followUpOf = new Map((followUps ?? []).map((f) => [f.submission_id, f.answered_at ? "answered" : "asked"] as const));
   const submissions = ((data ?? []) as Submission[]).filter(
     (s) => s.status !== "uploading" || (priceLabel !== null && canStillPay(s, windowMinutes)),
   );
@@ -136,7 +140,17 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
                   <PayButton submissionId={s.id} priceLabel={priceLabel} />
                 </span>
               ) : (
-                <Status id={s.id} status={s.status} />
+                <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
+                  {followUpOf.get(s.id) === "answered" && (
+                    <Link href={`/reviews/${s.id}#follow-up`} className="text-sm font-medium text-flame-deep hover:underline">
+                      💬 Tim answered your question
+                    </Link>
+                  )}
+                  {followUpOf.get(s.id) === "asked" && (
+                    <span className="text-sm text-muted">Follow-up sent ⏳</span>
+                  )}
+                  <Status id={s.id} status={s.status} locked={isLocked(s)} />
+                </span>
               )}
             </li>
           ))}
@@ -149,7 +163,15 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
   );
 }
 
-function Status({ id, status }: { id: string; status: Exclude<Submission["status"], "uploading"> }) {
+function Status({
+  id,
+  status,
+  locked,
+}: {
+  id: string;
+  status: Exclude<Submission["status"], "uploading">;
+  locked: boolean;
+}) {
   if (status === "queued" || status === "reviewing") {
     return (
       <span className="text-flame-deep font-medium">Currently being reviewed ⏳</span>
@@ -160,7 +182,7 @@ function Status({ id, status }: { id: string; status: Exclude<Submission["status
       href={`/reviews/${id}`}
       className="rounded-full bg-ink px-4 py-2 text-sm font-bold text-paper hover:bg-flame"
     >
-      Reviewed! 🔥
+      {locked ? "Reviewed! Unlock 🔒" : "Reviewed! 🔥"}
     </Link>
   );
 }

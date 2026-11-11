@@ -128,8 +128,11 @@ export default function SignInForm() {
     return (
       <form onSubmit={verify} noValidate className="mt-8">
         <p className="text-muted">
-          We sent a code to <span className="font-semibold text-ink">{clean}</span>. Enter it below, or tap the
-          link in the email.
+          We sent a code to <span className="font-semibold text-ink">{clean}</span>. Enter it below.
+        </p>
+        <p className="mt-3 rounded-xl bg-butter/30 px-4 py-3 text-sm">
+          <span className="font-semibold">Not seeing it?</span> Check your spam or junk folder, and mark it
+          &ldquo;Not spam&rdquo; so the next one lands in your inbox.
         </p>
         <input
           type="text"

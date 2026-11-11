@@ -57,7 +57,8 @@ export type ReportInput = { markdown: string; audioPath: string | null; scores: 
 /**
  * Save a report draft, or publish it to the user.
  * Publishing marks the submission done and removes report files the final text
- * no longer uses. The user's original recordings are kept (until they ask for
+ * no longer uses. Publishing an unpaid submission ("uploading") locks the
+ * report until the user pays to unlock it (see checkoutForUnlock). The user's original recordings are kept (until they ask for
  * them to be deleted), next to the report's images and voice note.
  */
 export async function saveReport(submissionId: string, input: ReportInput) {
@@ -96,7 +97,12 @@ export async function saveReport(submissionId: string, input: ReportInput) {
     await pruneUnusedAssets(sub.user_id, submissionId, referencedAssets(input.markdown, input.audioPath));
     await db
       .from("submissions")
-      .update({ status: "done", reviewed_at: sub.status === "done" ? undefined : now })
+      .update({
+        status: "done",
+        reviewed_at: sub.status === "done" ? undefined : now,
+        // Published before they paid: they see the score, and pay to unlock the rest.
+        ...(sub.status === "uploading" ? { unlock_required: true } : {}),
+      })
       .eq("id", submissionId);
   } else if (sub.status === "queued") {
     await db.from("submissions").update({ status: "reviewing" }).eq("id", submissionId);

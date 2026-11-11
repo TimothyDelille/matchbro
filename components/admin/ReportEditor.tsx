@@ -32,10 +32,16 @@ const STARTER = `## What's working
 
 export default function ReportEditor({
   submissionId,
+  unpaid,
+  locked,
   initial,
   assets: initialAssets,
 }: {
   submissionId: string;
+  /** Not paid yet: publishing locks the review behind the unlock price. */
+  unpaid: boolean;
+  /** Published before payment and not unlocked yet. */
+  locked: boolean;
   initial: Initial;
   assets: Record<string, string>;
 }) {
@@ -354,21 +360,33 @@ export default function ReportEditor({
             >
               Save changes
             </button>
-            <Link href={`/reviews/${submissionId}`} className="font-semibold text-muted hover:text-ink" target="_blank">
+            <Link
+              href={`/reviews/${submissionId}${locked ? "?view=user" : ""}`}
+              className="font-semibold text-muted hover:text-ink"
+              target="_blank"
+            >
               View as user
             </Link>
-            <span className="ml-auto text-sm text-muted">Changes go live for the user as soon as you save.</span>
+            <span className="ml-auto text-sm text-muted">
+              {locked
+                ? "Locked: they see the score until they pay to unlock."
+                : "Changes go live for the user as soon as you save."}
+            </span>
           </>
         ) : confirming ? (
           <>
-            <span className="font-semibold">Send this review to the user?</span>
+            <span className="font-semibold">
+              {unpaid
+                ? "They haven't paid. Publish locked? They'll see the score and pay to unlock the rest."
+                : "Send this review to the user?"}
+            </span>
             <button
               type="button"
               onClick={() => save(true)}
               disabled={Boolean(busy)}
               className="rounded-full bg-flame px-6 py-3 font-bold text-paper hover:bg-flame-deep disabled:opacity-50"
             >
-              Yes, publish
+              {unpaid ? "Yes, publish locked" : "Yes, publish"}
             </button>
             <button type="button" onClick={() => setConfirming(false)} className="font-semibold text-muted hover:text-ink">
               Cancel
@@ -390,7 +408,7 @@ export default function ReportEditor({
               disabled={Boolean(busy)}
               className="rounded-full bg-flame px-6 py-3 font-bold text-paper hover:bg-flame-deep disabled:opacity-50"
             >
-              Publish
+              {unpaid ? "Publish locked 🔒" : "Publish"}
             </button>
           </>
         )}
