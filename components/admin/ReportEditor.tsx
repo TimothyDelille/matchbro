@@ -205,6 +205,41 @@ export default function ReportEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [save, busy, published]);
 
+  // The PDF is built from the saved report, so unsaved edits must be saved first.
+  async function exportPdf() {
+    if (dirty) {
+      setError("Save your changes first so the PDF matches.");
+      return;
+    }
+    setError(null);
+    setBusy("Building PDF…");
+    try {
+      const res = await fetch(`/api/admin/submissions/${submissionId}/pdf`);
+      if (!res.ok) throw new Error((await readJson<object>(res)).error);
+      const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "review.pdf";
+      const url = URL.createObjectURL(await res.blob());
+      const a = Object.assign(document.createElement("a"), { href: url, download: name });
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 10_000);
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "Couldn't build the PDF. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const exportButton = (
+    <button
+      type="button"
+      onClick={exportPdf}
+      disabled={Boolean(busy)}
+      className="font-semibold text-muted hover:text-ink disabled:opacity-50"
+      title="Score and written review only, without their submitted photos"
+    >
+      Export PDF
+    </button>
+  );
+
   const tool = "rounded-lg px-2.5 py-1.5 text-sm font-semibold text-muted hover:bg-line hover:text-ink";
 
   return (
@@ -367,6 +402,7 @@ export default function ReportEditor({
             >
               View as user
             </Link>
+            {exportButton}
             <span className="ml-auto text-sm text-muted">
               {locked
                 ? "Locked: they see the score until they pay to unlock."
@@ -410,6 +446,7 @@ export default function ReportEditor({
             >
               {unpaid ? "Publish locked 🔒" : "Publish"}
             </button>
+            {exportButton}
           </>
         )}
       </div>

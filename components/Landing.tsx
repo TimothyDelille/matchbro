@@ -43,7 +43,7 @@ export default function Landing({ variant }: { variant: LandingVariant }) {
       <section className="mx-auto w-full max-w-6xl flex-1 px-5 sm:px-8 pt-9 pb-[max(2.5rem,env(safe-area-inset-bottom))] lg:py-0 grid lg:grid-cols-[1.2fr_1fr] items-center gap-12 lg:gap-6">
         <div className="text-center lg:text-left">
           <h1 className="font-extrabold tracking-[-0.045em] leading-[0.92] text-[clamp(2.6rem,11.5vw,4.75rem)] text-balance">
-            Want to know your hinge score?
+            What's your hinge score?
           </h1>
           <p className="mt-5 text-lg sm:text-xl text-muted max-w-md mx-auto lg:mx-0 text-pretty">
             Get your score and a plan to improve your profile and get more likes.

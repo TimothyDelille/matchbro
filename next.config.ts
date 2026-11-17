@@ -3,6 +3,10 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   /* config options here */
   cacheComponents: true,
+  // Fonts read from disk when rendering report PDFs (lib/pdf).
+  outputFileTracingIncludes: {
+    "/api/admin/submissions/*/pdf": ["./lib/pdf/fonts/**/*"],
+  },
   // PostHog via our own domain (see instrumentation-client.ts).
   async rewrites() {
     return [

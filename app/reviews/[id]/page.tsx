@@ -140,6 +140,14 @@ async function Review({
           canAsk={report.user_id === user.id}
         />
       )}
+      {!locked && (
+        <p className="mt-12 border-t border-line pt-6 text-muted">
+          If you have any questions, feel free to reach out to:{" "}
+          <a href="mailto:support@matchbro.app" className="font-semibold text-flame-deep hover:underline">
+            support@matchbro.app
+          </a>
+        </p>
+      )}
     </article>
   );
 }

@@ -5,6 +5,11 @@ import { RUBRICS, profileScore, scoreColor, type RubricKey, type Scores } from "
 export default function ScoreCard({ scores }: { scores: Scores }) {
   const total = profileScore(scores);
   if (total === null) return null;
+  // Rubrics that weren't part of this submission (N/A) aren't shown.
+  const scored = RUBRICS.flatMap(({ key, label }) => {
+    const s = scores[key];
+    return s === null ? [] : [{ key, label, s }];
+  });
 
   return (
     <section className="mt-6 rounded-2xl border border-line">
@@ -20,16 +25,9 @@ export default function ScoreCard({ scores }: { scores: Scores }) {
           </span>
           <span className="flex items-center gap-3">
             <span aria-hidden className="flex gap-1.5 group-open:hidden">
-              {RUBRICS.map(({ key }) => {
-                const s = scores[key];
-                return (
-                  <span
-                    key={key}
-                    className={`size-2.5 rounded-full ${s === null ? "border border-dashed border-muted" : ""}`}
-                    style={s === null ? undefined : { background: scoreColor(s) }}
-                  />
-                );
-              })}
+              {scored.map(({ key, s }) => (
+                <span key={key} className="size-2.5 rounded-full" style={{ background: scoreColor(s) }} />
+              ))}
             </span>
             <svg
               aria-hidden
@@ -49,39 +47,22 @@ export default function ScoreCard({ scores }: { scores: Scores }) {
         </summary>
 
         <ul className="divide-y divide-line border-t border-line px-4 pb-1">
-          {RUBRICS.map(({ key, label }) => {
-            const s = scores[key];
-            return (
-              <li key={key} className="flex gap-3.5 py-4">
-                <span
-                  className={`flex size-10 shrink-0 items-center justify-center rounded-xl bg-line/60 ${s === null ? "text-muted" : ""}`}
-                >
-                  <RubricIcon rubric={key} />
-                </span>
-                {s === null ? (
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-bold text-muted">{label}</span>
-                      <span className="rounded-full border border-dashed border-muted px-3 py-0.5 text-sm font-semibold text-muted">
-                        N/A
-                      </span>
-                    </div>
-                    <p className="mt-1 text-sm text-muted">Not scored: it wasn&apos;t in this submission.</p>
-                  </div>
-                ) : (
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <span className="font-bold">{label}</span>
-                      <span className="text-xl font-extrabold tracking-tight tabular-nums">{s}</span>
-                    </div>
-                    <div className="mt-2 h-2 overflow-hidden rounded-full bg-line/60">
-                      <div className="h-full rounded-full" style={{ width: `${s}%`, background: scoreColor(s) }} />
-                    </div>
-                  </div>
-                )}
-              </li>
-            );
-          })}
+          {scored.map(({ key, label, s }) => (
+            <li key={key} className="flex gap-3.5 py-4">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-line/60">
+                <RubricIcon rubric={key} />
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span className="font-bold">{label}</span>
+                  <span className="text-xl font-extrabold tracking-tight tabular-nums">{s}</span>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-line/60">
+                  <div className="h-full rounded-full" style={{ width: `${s}%`, background: scoreColor(s) }} />
+                </div>
+              </div>
+            </li>
+          ))}
         </ul>
       </details>
     </section>
