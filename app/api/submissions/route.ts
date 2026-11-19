@@ -2,6 +2,7 @@ import { randomBytes } from "node:crypto";
 import { BUCKET, configError, createAccount, getSetting, supabaseAdmin, sweepExpiredUploads } from "@/lib/supabase/admin";
 import { currentUser, supabaseServer } from "@/lib/supabase/server";
 import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES } from "@/lib/limits";
+import { cleanAnswers } from "@/lib/onboarding";
 
 type FileMeta = { name: string; type: string; size: number };
 
@@ -15,7 +16,7 @@ export async function POST(req: Request) {
   const misconfigured = configError();
   if (misconfigured) return fail(misconfigured, 500);
 
-  let body: { email?: string; files?: FileMeta[]; website?: string };
+  let body: { email?: string; files?: FileMeta[]; website?: string; onboarding?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -103,6 +104,13 @@ export async function POST(req: Request) {
     .from("submissions")
     .update({ file_paths: uploads.map((u) => u.path), total_bytes: total })
     .eq("id", submissionId);
+
+  // Quiz answers, shown to the reviewer. A separate write so a submission never fails over them.
+  const onboarding = cleanAnswers(body.onboarding);
+  if (Object.keys(onboarding).length) {
+    const { error } = await db.from("submissions").update({ onboarding }).eq("id", submissionId);
+    if (error) console.error("onboarding answers", error);
+  }
 
   return Response.json({ submissionId, uploads });
 }

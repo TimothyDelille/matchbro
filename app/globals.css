@@ -22,6 +22,8 @@
   --color-flame-deep: var(--flame-deep);
   --color-butter: var(--butter);
   --color-line: var(--line);
+  --color-good: var(--good);
+  --color-bad: var(--bad);
   --font-sans: "Bricolage Grotesque Variable", system-ui, sans-serif;
 }
 
@@ -64,8 +66,83 @@ dialog[open] {
   }
 }
 
+/* Demo mode: "analyzing your profile" screen. */
+.analyze-in {
+  animation: analyze-in 0.35s ease-out;
+}
+@keyframes analyze-in {
+  from {
+    opacity: 0;
+  }
+}
+.step-in {
+  animation: step-in 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.pop-in {
+  animation: pop-in 0.45s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+}
+.progress-fill {
+  background: linear-gradient(90deg, var(--flame), #ff8a3d, var(--butter));
+  background-size: 200% 100%;
+  animation: progress-flow 2.2s linear infinite;
+}
+.progress-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 20%, rgb(255 255 255 / 0.45) 50%, transparent 80%);
+  background-size: 60% 100%;
+  background-repeat: no-repeat;
+  animation: progress-shine 1.4s ease-in-out infinite;
+}
+@keyframes progress-flow {
+  to {
+    background-position: -200% 0;
+  }
+}
+@keyframes progress-shine {
+  from {
+    background-position: -60% 0;
+  }
+  to {
+    background-position: 160% 0;
+  }
+}
+.scan-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 38%;
+  top: -38%;
+  background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--flame) 35%, transparent) 85%, var(--flame));
+  box-shadow: 0 2px 12px var(--flame);
+  animation: scan 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes scan {
+  to {
+    top: 100%;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .ring-fill {
+  .ring-fill,
+  .analyze-in,
+  .step-in,
+  .pop-in,
+  .progress-fill,
+  .progress-fill::after,
+  .scan-line {
     animation: none;
   }
   dialog[open] {

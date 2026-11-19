@@ -10,6 +10,7 @@ import PaidPill from "@/components/admin/PaidPill";
 import FollowUpAnswer from "@/components/admin/FollowUpAnswer";
 import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { SCORE_COLUMNS, scoresFromRow } from "@/lib/score";
+import { describeOnboarding } from "@/lib/onboarding";
 
 const when = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -40,7 +41,7 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
     .maybeSingle();
   if (!sub || !["uploading", "queued", "reviewing", "done"].includes(sub.status)) notFound();
 
-  const [{ data: profile }, { data: report }, { data: signed }, { data: followUp }] = await Promise.all([
+  const [{ data: profile }, { data: report }, { data: signed }, { data: followUp }, { data: quiz }] = await Promise.all([
     db.from("profiles").select("email, phone").eq("id", sub.user_id).maybeSingle(),
     db
       .from("reports")
@@ -51,7 +52,10 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
       ? db.storage.from(BUCKET).createSignedUrls(sub.file_paths, 3600)
       : Promise.resolve({ data: [] as { signedUrl: string | null; path: string | null }[] }),
     db.from("follow_ups").select(FOLLOW_UP_COLUMNS).eq("submission_id", id).maybeSingle<FollowUp>(),
+    // Its own query: older databases without the column just show nothing.
+    db.from("submissions").select("onboarding").eq("id", id).maybeSingle(),
   ]);
+  const answers = describeOnboarding(quiz?.onboarding);
 
   const media = (signed ?? [])
     .filter((m) => m.signedUrl)
@@ -81,6 +85,16 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] items-start">
         <aside className="lg:sticky lg:top-6 space-y-4">
+          {answers.length > 0 && (
+            <dl className="rounded-2xl bg-line/60 p-5 space-y-2 text-sm">
+              {answers.map(([name, answer]) => (
+                <div key={name} className="flex gap-3">
+                  <dt className="w-24 shrink-0 text-muted">{name}</dt>
+                  <dd className="font-medium">{answer}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
           <h2 className="font-bold">Their submission</h2>
           {media.length === 0 ? (
             <p className="rounded-2xl bg-line/60 p-5 text-muted">

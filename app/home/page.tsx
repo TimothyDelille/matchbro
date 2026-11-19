@@ -1,9 +1,11 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import HeardFrom from "@/components/HeardFrom";
 import PayButton from "@/components/PayButton";
 import SubmitSheet from "@/components/SubmitSheet";
 import { supabaseServer } from "@/lib/supabase/server";
+import { isDemoUser } from "@/lib/demo";
 import { getSetting } from "@/lib/supabase/admin";
 import { checkoutPriceLabel, confirmCheckout, isLocked } from "@/lib/stripe";
 
@@ -109,6 +111,7 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
           Payment received. We will send you an email once we reviewed your profile 🔥
         </p>
       )}
+      {payment === "paid" && <HeardFrom />}
       {payment === "pending" && (
         <p role="status" className="mt-8 rounded-2xl bg-line/60 px-5 py-4 font-medium">
           Your payment is processing. We&apos;ll start your review as soon as it clears.
@@ -157,7 +160,7 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
         </ul>
       )}
 
-      <div className="flex justify-center my-5"><SubmitSheet account={{ email: user.email ?? "" }} /></div>
+      <div className="flex justify-center my-5"><SubmitSheet account={{ email: user.email ?? "", demo: isDemoUser(user) }} /></div>
 
     </>
   );
