@@ -1,31 +1,5 @@
 import UnlockButton from "@/components/UnlockButton";
-
-/**
- * Stand-in text for a locked review. The real report never reaches the page
- * while it's locked, so blurring this can't be undone in dev tools.
- */
-const PLACEHOLDER = [
-  [
-    "What's working",
-    "Your first photo does a lot of heavy lifting and it shows. There's a real person here, and that's more than most profiles manage. The problem is everything that comes after it, which quietly undoes the good start.",
-  ],
-  [
-    "Photos",
-    "Photo two and photo four are telling the same story twice, and neither story is the one you want. Swap one of them for something that shows what a Saturday with you looks like. The group shot needs to go, or at least move way down.",
-  ],
-  [
-    "Prompts",
-    "Your prompts are safe in a way that reads as forgettable. Nobody can reply to this answer because there's nothing to grab onto. Here's a rewrite that keeps your voice but gives them an easy opener.",
-  ],
-  [
-    "Conversations",
-    "You're asking good questions, then answering them yourself two messages later. Leave room. The second thread died because the follow-up was an interview, not a conversation.",
-  ],
-  [
-    "Try this next",
-    "Reorder the photos, rewrite the two weakest prompts, and try the opener below on your next three matches. Then send it back and we'll see what moved.",
-  ],
-];
+import { LOCKED_PREVIEW } from "@/lib/locked-preview";
 
 export default function LockedReport({
   submissionId,
@@ -42,7 +16,7 @@ export default function LockedReport({
     <section className="relative mt-6 -mx-2 overflow-clip px-2" aria-labelledby="unlock-heading">
       <div aria-hidden className="pointer-events-none select-none blur-[7px]">
         <div className="prose prose-lg max-w-none prose-headings:font-extrabold prose-headings:tracking-tight">
-          {PLACEHOLDER.map(([heading, body]) => (
+          {LOCKED_PREVIEW.map(([heading, body]) => (
             <div key={heading}>
               <h2>{heading}</h2>
               <p>{body}</p>

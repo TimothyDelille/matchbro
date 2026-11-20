@@ -4,6 +4,7 @@ import BeforeAfter, { type LandingVariant } from "@/components/BeforeAfter";
 import LandingView from "@/components/LandingView";
 import SubmitSheet from "@/components/SubmitSheet";
 import { currentUser } from "@/lib/supabase/server";
+import { isDemoUser } from "@/lib/demo";
 
 const pill =
   "inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:border-ink";
@@ -20,7 +21,7 @@ async function AccountLink() {
 
 async function Submit() {
   const user = await currentUser();
-  return <SubmitSheet label={CTA} account={user ? { email: user.email ?? "" } : undefined} />;
+  return <SubmitSheet onboarding label={CTA} account={user ? { email: user.email ?? "", demo: isDemoUser(user) } : undefined} />;
 }
 
 /** The landing page. `variant` only swaps the before/after photos (A/B test). */
@@ -49,7 +50,7 @@ export default function Landing({ variant }: { variant: LandingVariant }) {
             Get your score and a plan to improve your profile and get more likes.
           </p>
           <div className="mt-8">
-            <Suspense fallback={<SubmitSheet label={CTA} />}>
+            <Suspense fallback={<SubmitSheet onboarding label={CTA} />}>
               <Submit />
             </Suspense>
           </div>
