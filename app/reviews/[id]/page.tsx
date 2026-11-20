@@ -7,8 +7,8 @@ import Markdown from "@/components/Markdown";
 import MediaCarousel from "@/components/MediaCarousel";
 import ScoreCard from "@/components/ScoreCard";
 import { isAdmin } from "@/lib/admin-auth";
-import { referencedAssets, signAssets, signSubmissionMedia } from "@/lib/report";
-import { SCORE_COLUMNS, scoresFromRow } from "@/lib/score";
+import { otherProfileScores, referencedAssets, signAssets, signSubmissionMedia } from "@/lib/report";
+import { SCORE_COLUMNS, profileScore, scoreDistribution, scoresFromRow } from "@/lib/score";
 import { confirmCheckout, isLocked, roastPriceLabel } from "@/lib/stripe";
 import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -74,9 +74,9 @@ async function Review({
     .maybeSingle();
   if (!report || (!report.published_at && !admin)) notFound();
 
-  const [assets, media, priceLabel, followUp] = await Promise.all([
+  const [assets, media, priceLabel, followUp, others] = await Promise.all([
     locked ? {} : signAssets(report.user_id, id, referencedAssets(report.markdown, report.audio_path)),
-    locked ? [] : signSubmissionMedia(sub.file_paths ?? []),
+    signSubmissionMedia(sub.file_paths ?? []),
     locked ? roastPriceLabel() : null,
     locked
       ? null
@@ -86,7 +86,11 @@ async function Review({
           .eq("submission_id", id)
           .maybeSingle()
           .then(({ data }) => data as FollowUp | null),
+    otherProfileScores(id),
   ]);
+  const scores = scoresFromRow(report);
+  const total = profileScore(scores);
+  const distribution = total === null ? null : scoreDistribution(total, others);
   const audio = !locked && report.audio_path ? (assets as Record<string, string>)[report.audio_path] : null;
 
   return (
@@ -114,9 +118,14 @@ async function Review({
         </p>
       )}
 
-      <ScoreCard scores={scoresFromRow(report)} />
+      {/* Their own pictures sit behind the score, locked or not. */}
+      <ScoreCard
+        scores={scores}
+        distribution={distribution}
+        photos={media.filter((m) => m.kind === "image").slice(0, 6).map((m) => m.url)}
+      />
 
-      {/* Locked: skip their uploads so the paywall sits right under the score. */}
+      {/* Locked: skip the uploads strip so the paywall sits right under the score. */}
       {!locked && <MediaCarousel items={media} />}
 
       {locked && <LockedReport submissionId={id} priceLabel={priceLabel} preview={report.user_id !== user.id} />}

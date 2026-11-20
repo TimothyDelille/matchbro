@@ -1,111 +1,272 @@
-import ScoreRing from "@/components/ScoreRing";
-import { RUBRICS, profileScore, scoreColor, type RubricKey, type Scores } from "@/lib/score";
+"use client";
 
-/** The user's profile score, with the per-rubric breakdown folded into a dropdown. */
-export default function ScoreCard({ scores }: { scores: Scores }) {
+import { useId, useRef, useState } from "react";
+import { CountUp, useHeroPhoto, type HeroPick } from "@/components/ScoreCardMotion";
+import { RUBRICS, profileScore, scoreColor, scoreVerdict, type Distribution, type Scores } from "@/lib/score";
+
+/**
+ * The user's profile score as a swipeable rating card.
+ * Slide 1: their picture with the overall score on it and each rubric's score.
+ * Slide 2 (when enough profiles have been reviewed): where they sit among everyone else.
+ */
+export default function ScoreCard({
+  scores,
+  photos = [],
+  distribution = null,
+}: {
+  scores: Scores;
+  photos?: string[];
+  distribution?: Distribution | null;
+}) {
+  // Null once we know none of their pictures can be shown: the card then drops the picture area.
+  const hero = useHeroPhoto(photos);
+  const track = useRef<HTMLDivElement>(null);
+  const [slide, setSlide] = useState(0);
   const total = profileScore(scores);
   if (total === null) return null;
+
+  const hasPhoto = photos.length > 0 && hero !== null;
+  const slides = distribution ? 2 : 1;
+
+  function onScroll() {
+    const el = track.current;
+    if (el) setSlide(Math.round(el.scrollLeft / el.clientWidth));
+  }
+
+  function goTo(i: number) {
+    const el = track.current;
+    el?.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+  }
+
+  return (
+    <section
+      aria-roledescription="carousel"
+      aria-labelledby="score-heading"
+      className="mt-6 overflow-hidden rounded-3xl bg-ink text-paper"
+    >
+      <div
+        ref={track}
+        onScroll={onScroll}
+        tabIndex={slides > 1 ? 0 : undefined}
+        className="flex snap-x snap-mandatory overflow-x-auto rounded-t-3xl overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        <div
+          role="group"
+          aria-roledescription="slide"
+          aria-label={`1 of ${slides}`}
+          className={`w-full flex-none snap-start ${hasPhoto ? "sm:grid sm:grid-cols-2" : ""}`}
+        >
+          <ScoreSlide scores={scores} total={total} hero={hasPhoto ? hero : null} hasPhoto={hasPhoto} />
+        </div>
+        {distribution && (
+          <div
+            role="group"
+            aria-roledescription="slide"
+            aria-label={`2 of ${slides}`}
+            className="flex w-full flex-none snap-start flex-col items-center justify-center px-6 py-8 text-center sm:grid sm:grid-cols-2 sm:gap-6 sm:px-8"
+          >
+            <CompareSlide total={total} distribution={distribution} hero={hasPhoto ? hero : null} active={slide === 1} />
+          </div>
+        )}
+      </div>
+
+      {slides > 1 && (
+        <div className="flex justify-center gap-2 pb-5 pt-1">
+          {[0, 1].map((i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => goTo(i)}
+              aria-label={i === 0 ? "Show your score" : "Show how you compare"}
+              aria-current={slide === i}
+              className={`h-2 rounded-full transition-all duration-300 ${slide === i ? "w-6 bg-paper" : "w-2 bg-paper/35 hover:bg-paper/60"}`}
+            />
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ScoreSlide({
+  scores,
+  total,
+  hero,
+  hasPhoto,
+}: {
+  scores: Scores;
+  total: number;
+  hero: HeroPick | null | undefined;
+  hasPhoto: boolean;
+}) {
   // Rubrics that weren't part of this submission (N/A) aren't shown.
   const scored = RUBRICS.flatMap(({ key, label }) => {
     const s = scores[key];
     return s === null ? [] : [{ key, label, s }];
   });
+  const color = scoreColor(total);
 
   return (
-    <section className="mt-6 rounded-2xl border border-line">
-      <details className="group">
-        <summary className="flex cursor-pointer list-none items-center gap-4 rounded-2xl px-4 py-3 [&::-webkit-details-marker]:hidden">
-          <ScoreRing score={total} size={64} />
-          <span className="min-w-0 flex-1">
-            <h2 className="font-bold">Profile score</h2>
-            <span className="text-sm text-muted">
-              <span className="group-open:hidden">See breakdown</span>
-              <span className="hidden group-open:inline">Hide breakdown</span>
-            </span>
-          </span>
-          <span className="flex items-center gap-3">
-            <span aria-hidden className="flex gap-1.5 group-open:hidden">
-              {scored.map(({ key, s }) => (
-                <span key={key} className="size-2.5 rounded-full" style={{ background: scoreColor(s) }} />
-              ))}
-            </span>
-            <svg
-              aria-hidden
-              width="20"
-              height="20"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-muted transition-transform group-open:rotate-180"
-            >
-              <path d="M6 9l6 6 6-6" />
-            </svg>
-          </span>
-        </summary>
-
-        <ul className="divide-y divide-line border-t border-line px-4 pb-1">
-          {scored.map(({ key, label, s }) => (
-            <li key={key} className="flex gap-3.5 py-4">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-line/60">
-                <RubricIcon rubric={key} />
+    <>
+      <div
+        className={
+          hasPhoto
+            ? "relative aspect-[4/5] overflow-hidden bg-linear-to-br from-muted to-ink sm:aspect-auto sm:min-h-[26rem]"
+            : ""
+        }
+      >
+        {hasPhoto && (
+          <>
+            <HeroImage hero={hero} className="absolute inset-0" />
+            <div aria-hidden className="absolute inset-0 bg-linear-to-b from-ink/0 from-35% to-ink" />
+          </>
+        )}
+        <div
+          className={`flex items-end justify-between gap-3 px-5 ${hasPhoto ? "absolute inset-x-0 bottom-0 pb-4 sm:pb-6" : "pt-6"}`}
+        >
+          <div>
+            <h2 id="score-heading" className="text-xs font-bold uppercase tracking-[0.14em] text-paper/70">
+              Profile score
+            </h2>
+            <p className="mt-1 flex items-baseline gap-1.5" aria-label={`${total} out of 100`}>
+              <span aria-hidden className="text-8xl font-extrabold leading-[0.85] tracking-[-0.05em] tabular-nums">
+                <CountUp value={total} />
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="font-bold">{label}</span>
-                  <span className="text-xl font-extrabold tracking-tight tabular-nums">{s}</span>
-                </div>
-                <div className="mt-2 h-2 overflow-hidden rounded-full bg-line/60">
-                  <div className="h-full rounded-full" style={{ width: `${s}%`, background: scoreColor(s) }} />
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
-      </details>
-    </section>
+              <span aria-hidden className="text-sm font-semibold text-paper/60">
+                /100
+              </span>
+            </p>
+          </div>
+          <span
+            className={`mb-1 rounded-full px-3.5 py-1.5 text-sm font-extrabold ${total >= 50 && total <= 80 ? "text-ink" : "text-paper"}`}
+            style={{ background: color }}
+          >
+            {scoreVerdict(total)}
+          </span>
+        </div>
+      </div>
+
+      <ul className="flex flex-col justify-center space-y-4 p-5 sm:p-6">
+        {scored.map(({ key, label, s }, i) => (
+          <li key={key}>
+            <div className="flex items-baseline justify-between gap-3">
+              <span className="font-semibold text-paper/80">{label}</span>
+              <span className="text-2xl font-extrabold tracking-tight tabular-nums">{s}</span>
+            </div>
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-paper/15">
+              <div
+                className="bar-fill h-full rounded-full"
+                style={{ width: `${s}%`, background: scoreColor(s), animationDelay: `${0.3 + i * 0.12}s` }}
+              />
+            </div>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
-function RubricIcon({ rubric }: { rubric: RubricKey }) {
-  const paths: Record<RubricKey, React.ReactNode> = {
-    pictures: (
-      <>
-        <path d="M3 8a2 2 0 0 1 2-2h2l2-2h6l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-        <circle cx="12" cy="13" r="3.5" />
-      </>
-    ),
-    prompts: (
-      <>
-        <path d="M7 7h10M7 12h10M7 17h6" />
-        <rect x="3" y="3" width="18" height="18" rx="3" />
-      </>
-    ),
-    conversation: <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" />,
-    settings: (
-      <>
-        <path d="M4 6h10M18 6h2M4 18h4M12 18h8M4 12h2M10 12h10" />
-        <circle cx="16" cy="6" r="2" />
-        <circle cx="10" cy="18" r="2" />
-        <circle cx="8" cy="12" r="2" />
-      </>
-    ),
-  };
+/** Where their overall score sits on the curve of every other reviewed profile. */
+function CompareSlide({
+  total,
+  distribution,
+  hero,
+  active,
+}: {
+  total: number;
+  distribution: Distribution;
+  hero: HeroPick | null | undefined;
+  active: boolean;
+}) {
+  const id = useId();
+  const W = 300;
+  const TOP = 8;
+  const BASE = 96;
+  const x = (score: number) => (score / 100) * W;
+  const y = (density: number) => BASE - density * (BASE - TOP);
+  const line = distribution.curve.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d).toFixed(1)}`).join("");
+  const area = `${line}L${W},${BASE}L0,${BASE}Z`;
+  const you = x(total);
+  // Keep the "You're here" label inside the chart at the ends.
+  const labelX = Math.min(W - 34, Math.max(34, you));
+  const color = scoreColor(total);
+
   return (
-    <svg
-      aria-hidden
-      width="20"
-      height="20"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      {paths[rubric]}
-    </svg>
+    <>
+      <div className="flex flex-col items-center">
+        {hero !== null && (
+          <div className="size-24 overflow-hidden rounded-full bg-paper/10 ring-4 ring-paper/10">
+            <HeroImage hero={hero} className="size-full" round />
+          </div>
+        )}
+        <p className={`font-semibold text-paper/70 ${hero !== null ? "mt-4" : ""}`}>Overall</p>
+        <p className="text-6xl font-extrabold leading-none tracking-[-0.04em] tabular-nums">{total}</p>
+      </div>
+
+      <div className="flex w-full flex-col items-center">
+        <svg
+          viewBox={`0 0 ${W} 126`}
+          className="mt-6 w-full max-w-sm overflow-visible sm:mt-0"
+          role="img"
+          aria-label={`Your score of ${total} is higher than ${distribution.percentile}% of the profiles we've reviewed.`}
+        >
+          <defs>
+            <linearGradient id={`${id}-fill`} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stopColor={color} stopOpacity="0.95" />
+              <stop offset="1" stopColor={color} stopOpacity="0.15" />
+            </linearGradient>
+            <clipPath id={`${id}-clip`}>
+              {/* Sweeps in from the left each time the slide comes into view. */}
+              <rect
+                x="0"
+                y="0"
+                width={you}
+                height={BASE}
+                className="transition-transform duration-1000 ease-out motion-reduce:transition-none"
+                style={{ transform: `scaleX(${active ? 1 : 0})`, transformOrigin: "0 0" }}
+              />
+            </clipPath>
+          </defs>
+          <path d={area} fill={`url(#${id}-fill)`} clipPath={`url(#${id}-clip)`} />
+          <path d={line} fill="none" stroke="var(--paper)" strokeOpacity="0.85" strokeWidth="2" strokeLinejoin="round" />
+          <line x1="0" x2={W} y1={BASE} y2={BASE} stroke="var(--paper)" strokeOpacity="0.2" />
+          <path d={`M${you},${BASE + 3}l6,9h-12z`} fill="var(--paper)" />
+          <text x={labelX} y={BASE + 27} textAnchor="middle" fontSize="12" fontWeight="700" fill="var(--paper)">
+            You&apos;re here
+          </text>
+        </svg>
+
+        <p className="mt-4 max-w-xs text-sm text-paper/70">
+          Your profile scores better than <span className="font-extrabold text-paper">{distribution.percentile}%</span> of
+          the profiles we&apos;ve reviewed.
+        </p>
+      </div>
+    </>
+  );
+}
+
+/**
+ * The picked picture. A real photo is framed on the face; an app screenshot is
+ * zoomed in on where dating apps put the main picture.
+ */
+function HeroImage({
+  hero,
+  className,
+  round = false,
+}: {
+  hero: HeroPick | null | undefined;
+  className: string;
+  round?: boolean;
+}) {
+  const screenshot = hero?.photo === false;
+  const zoom = screenshot ? (round ? "scale-[1.9]" : "scale-[1.14]") : "";
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- signed storage URL
+    <img
+      src={hero?.url}
+      alt=""
+      className={`${className} h-full w-full object-cover transition-opacity duration-700 ${hero ? "opacity-100" : "opacity-0"} ${zoom}`}
+      style={{ objectPosition: screenshot ? (round ? "50% 40%" : "50% 47%") : "50% 25%" }}
+    />
   );
 }

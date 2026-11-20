@@ -1,6 +1,6 @@
 import "server-only";
 import { BUCKET, supabaseAdmin } from "@/lib/supabase/admin";
-import { scoresToRow, type Scores } from "@/lib/score";
+import { SCORE_COLUMNS, profileScore, scoresFromRow, scoresToRow, type Scores } from "@/lib/score";
 
 /**
  * Report files live inside the submission's folder:
@@ -127,4 +127,14 @@ export async function signSubmissionMedia(filePaths: string[]): Promise<MediaIte
         kind: /\.(mp4|mov|webm|m4v)$/i.test(name) ? ("video" as const) : ("image" as const),
       };
     });
+}
+
+/** Overall scores of every published review except this submission's, for the score distribution. */
+export async function otherProfileScores(submissionId: string): Promise<number[]> {
+  const { data } = await supabaseAdmin()
+    .from("reports")
+    .select(SCORE_COLUMNS)
+    .not("published_at", "is", null)
+    .neq("submission_id", submissionId);
+  return (data ?? []).map((r) => profileScore(scoresFromRow(r))).filter((v): v is number => v !== null);
 }
