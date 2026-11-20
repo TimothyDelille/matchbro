@@ -1,6 +1,6 @@
 # matchbro.app
 
-Constructive dating profile reviews.
+dating profile reviews.
 
 Landing page + upload flow. Users drop in screenshots of their profile, enter their email, and submit. We review submissions oldest first (users never see the queue) and publish a report they can read with their account.
 
