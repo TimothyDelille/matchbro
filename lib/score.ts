@@ -63,3 +63,11 @@ export function scoreColor(score: number): string {
   if (score >= 50) return "var(--butter)";
   return "var(--bad)";
 }
+
+/** A short verdict for the profile score, shown next to the number. */
+export function scoreVerdict(score: number): string {
+  if (score > 80) return "Top tier";
+  if (score >= 65) return "Solid";
+  if (score >= 50) return "Average";
+  return "Needs work";
+}

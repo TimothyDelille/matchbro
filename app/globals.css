@@ -66,6 +66,17 @@ dialog[open] {
   }
 }
 
+/* Review score card: rubric bars grow from the left on load. */
+.bar-fill {
+  transform-origin: left;
+  animation: bar-fill 0.9s cubic-bezier(0.2, 0.8, 0.2, 1) backwards;
+}
+@keyframes bar-fill {
+  from {
+    transform: scaleX(0);
+  }
+}
+
 /* Demo mode: "analyzing your profile" screen. */
 .analyze-in {
   animation: analyze-in 0.35s ease-out;
@@ -137,6 +148,7 @@ dialog[open] {
 }
 @media (prefers-reduced-motion: reduce) {
   .ring-fill,
+  .bar-fill,
   .analyze-in,
   .step-in,
   .pop-in,

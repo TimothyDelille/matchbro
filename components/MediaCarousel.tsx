@@ -81,14 +81,16 @@ export default function MediaCarousel({ items }: { items: MediaItem[] }) {
         {items.map((m) => (
           <figure
             key={m.url}
-            className={`relative h-[min(52vh,440px)] aspect-[9/19] flex-none snap-start overflow-hidden rounded-2xl ${m.kind === "video" ? "bg-ink" : "bg-line"}`}
+            // Videos keep a phone-shaped frame; images take their own width so
+            // photos that aren't phone-shaped don't get grey bands.
+            className={`relative h-[min(52vh,440px)] flex-none snap-start overflow-hidden rounded-2xl ${m.kind === "video" ? "aspect-[9/19] bg-ink" : "min-w-24 bg-line"}`}
           >
             {m.kind === "video" ? (
               <video src={m.url} controls playsInline preload="metadata" className="h-full w-full object-contain" />
             ) : (
-              <a href={m.url} target="_blank" rel="noopener noreferrer" className="block h-full w-full">
+              <a href={m.url} target="_blank" rel="noopener noreferrer" className="block h-full">
                 {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URL */}
-                <img src={m.url} alt={m.name} loading="lazy" className="h-full w-full object-contain" />
+                <img src={m.url} alt={m.name} loading="lazy" className="h-full w-auto max-w-[85vw] object-cover" />
               </a>
             )}
           </figure>

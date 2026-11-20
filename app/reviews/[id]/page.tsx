@@ -76,7 +76,7 @@ async function Review({
 
   const [assets, media, priceLabel, followUp] = await Promise.all([
     locked ? {} : signAssets(report.user_id, id, referencedAssets(report.markdown, report.audio_path)),
-    locked ? [] : signSubmissionMedia(sub.file_paths ?? []),
+    signSubmissionMedia(sub.file_paths ?? []),
     locked ? roastPriceLabel() : null,
     locked
       ? null
@@ -114,9 +114,13 @@ async function Review({
         </p>
       )}
 
-      <ScoreCard scores={scoresFromRow(report)} />
+      {/* Their own pictures sit behind the score, locked or not. */}
+      <ScoreCard
+        scores={scoresFromRow(report)}
+        photos={media.filter((m) => m.kind === "image").slice(0, 6).map((m) => m.url)}
+      />
 
-      {/* Locked: skip their uploads so the paywall sits right under the score. */}
+      {/* Locked: skip the uploads strip so the paywall sits right under the score. */}
       {!locked && <MediaCarousel items={media} />}
 
       {locked && <LockedReport submissionId={id} priceLabel={priceLabel} preview={report.user_id !== user.id} />}
