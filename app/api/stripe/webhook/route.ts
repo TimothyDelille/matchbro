@@ -2,6 +2,9 @@ import type Stripe from "stripe";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { markSessionPaid, stripe } from "@/lib/stripe";
 
+// Room for the AI review that starts after a payment (lib/ai-review).
+export const maxDuration = 300;
+
 /**
  * Stripe webhook. Events to send here:
  *   checkout.session.completed, checkout.session.async_payment_succeeded,

@@ -8,6 +8,7 @@ import AdminHeader from "@/components/admin/AdminHeader";
 import ReportEditor from "@/components/admin/ReportEditor";
 import PaidPill from "@/components/admin/PaidPill";
 import FollowUpAnswer from "@/components/admin/FollowUpAnswer";
+import DeleteSubmissionButton from "@/components/admin/DeleteSubmissionButton";
 import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { SCORE_COLUMNS, scoresFromRow } from "@/lib/score";
 import { describeOnboarding } from "@/lib/onboarding";
@@ -81,6 +82,9 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
         </span>
         <span title={sub.paid_at ? `Paid ${when.format(new Date(sub.paid_at))}` : "No payment on record"}>
           <PaidPill paidAt={sub.paid_at} locked={sub.unlock_required} />
+        </span>
+        <span className="ml-auto">
+          <DeleteSubmissionButton submissionId={id} />
         </span>
       </div>
 

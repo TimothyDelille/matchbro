@@ -11,6 +11,9 @@ import { getSetting } from "@/lib/supabase/admin";
 import { checkoutPriceLabel, confirmCheckout, isLocked } from "@/lib/stripe";
 import { safeNextPath } from "@/lib/next-path";
 
+// Room for the AI review that can start when a payment is confirmed here (lib/ai-review).
+export const maxDuration = 300;
+
 type Submission = {
   id: string;
   status: "uploading" | "queued" | "reviewing" | "done" | "expired";

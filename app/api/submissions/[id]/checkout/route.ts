@@ -2,6 +2,9 @@ import { configError, supabaseAdmin } from "@/lib/supabase/admin";
 import { currentUser } from "@/lib/supabase/server";
 import { appOrigin, checkoutForSubmission, CheckoutError } from "@/lib/stripe";
 
+// Room for the AI review that can start when a payment is confirmed here (lib/ai-review).
+export const maxDuration = 300;
+
 /** Resume payment for an uploaded submission (e.g. after cancelling on the Stripe page). */
 export async function POST(req: Request, ctx: RouteContext<"/api/submissions/[id]/checkout">) {
   const misconfigured = configError();

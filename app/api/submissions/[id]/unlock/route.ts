@@ -2,6 +2,9 @@ import { configError, supabaseAdmin } from "@/lib/supabase/admin";
 import { currentUser } from "@/lib/supabase/server";
 import { appOrigin, checkoutForUnlock, CheckoutError } from "@/lib/stripe";
 
+// Room for the AI review that can start when a payment is confirmed here (lib/ai-review).
+export const maxDuration = 300;
+
 /** Start Stripe Checkout to unlock a review that was published before payment (signed-in owner only). */
 export async function POST(req: Request, ctx: RouteContext<"/api/submissions/[id]/unlock">) {
   const misconfigured = configError();

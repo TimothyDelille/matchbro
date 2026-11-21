@@ -15,6 +15,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 import { signInUrl } from "@/lib/next-path";
 
+// Room for the AI review that can start when a payment is confirmed here (lib/ai-review).
+export const maxDuration = 300;
+
 const dateFmt = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" });
 
 export default function ReviewPage({ params, searchParams }: PageProps<"/reviews/[id]">) {

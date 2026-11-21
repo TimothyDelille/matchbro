@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { BUCKET, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
 import { isGuestEmail, realEmail } from "@/lib/guest";
 import { EMAIL_RE } from "@/lib/limits";
+import { scheduleAiReview } from "@/lib/ai-review";
 
 /**
  * Stripe is the single source of truth for what a review costs: a Price with
@@ -243,6 +244,7 @@ export type EmailClaim = {
  * Record a paid Checkout Session, queue its submission, and give a guest account
  * the email they typed on Stripe. Idempotent: the webhook and the success page
  * can both call it. Returns null for sessions that aren't paid (yet).
+  then start the AI review (lib/ai-review). Idempotent: the webhook and the success page can both call it.
  */
 export async function markSessionPaid(session: Stripe.Checkout.Session): Promise<EmailClaim | null> {
   const submissionId = session.metadata?.submission_id;
@@ -266,7 +268,9 @@ export async function markSessionPaid(session: Stripe.Checkout.Session): Promise
     p_livemode: session.livemode,
   });
   if (error) throw error;
-
+  
+  // Paid and queued: let Claude write the review (no-op if AI reviews are off or it's already taken).
+  scheduleAiReview(submissionId);
   return claimPaidEmail(userId, submissionId, session.customer_details?.email);
 }
 

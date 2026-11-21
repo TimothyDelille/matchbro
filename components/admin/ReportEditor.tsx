@@ -205,6 +205,25 @@ export default function ReportEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [save, busy, published]);
 
+  // Fill the editor with Claude's review (lib/ai-review). Not saved until they save or publish.
+  async function aiDraft() {
+    if ((dirty || markdown.trim() !== STARTER.trim()) && !window.confirm("Replace the current text and scores with an AI draft?")) return;
+    setError(null);
+    setBusy("Writing AI draft… (up to a minute or two)");
+    try {
+      const res = await fetch(`/api/admin/submissions/${submissionId}/ai-review`, { method: "POST" });
+      const data = await readJson<{ markdown: string; scores: Scores }>(res);
+      if (!res.ok) throw new Error(data.error);
+      setMarkdown(data.markdown);
+      setScores(data.scores);
+      setDirty(true);
+    } catch (e) {
+      setError(e instanceof Error && e.message ? e.message : "The AI draft failed. Try again.");
+    } finally {
+      setBusy(null);
+    }
+  }
+
   // The PDF is built from the saved report, so unsaved edits must be saved first.
   async function exportPdf() {
     if (dirty) {
@@ -251,6 +270,18 @@ export default function ReportEditor({
           {savedAt && !dirty && ` · saved ${timeFmt.format(new Date(savedAt))}`}
           {dirty && " · unsaved changes"}
         </span>
+      </div>
+
+      <div className="mt-3 flex justify-end">
+        <button
+          type="button"
+          onClick={aiDraft}
+          disabled={Boolean(busy)}
+          className="rounded-full border border-line px-4 py-2 text-sm font-semibold hover:border-ink disabled:opacity-50"
+          title="Claude scores and writes the review from their files, using lib/ai-review/rubric.json"
+        >
+          ✨ AI draft
+        </button>
       </div>
 
       <ScorePanel scores={scores} onChange={setScore} disabled={Boolean(busy)} />
