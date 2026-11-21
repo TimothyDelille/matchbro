@@ -50,13 +50,7 @@ export default function Home({ searchParams }: PageProps<"/home">) {
       </header>
 
       <section className="mx-auto w-full max-w-3xl px-5 sm:px-8 py-14">
-        <Suspense
-          fallback={
-            <h1 className="text-5xl sm:text-6xl font-extrabold tracking-[-0.04em] leading-none">
-              Your reviews
-            </h1>
-          }
-        >
+        <Suspense fallback={<ReviewsSkeleton />}>
           <Reviews searchParams={searchParams} />
         </Suspense>
       </section>
@@ -68,6 +62,26 @@ export default function Home({ searchParams }: PageProps<"/home">) {
         </a>
       </footer>
     </main>
+  );
+}
+
+/** Same layout as the list below, shown while the reviews load. */
+function ReviewsSkeleton() {
+  return (
+    <div aria-busy="true" aria-label="Loading your reviews">
+      <h1 className="text-5xl sm:text-6xl font-extrabold tracking-[-0.04em] leading-none">Your reviews</h1>
+      <ul className="mt-12 divide-y divide-line border-y border-line animate-pulse">
+        {["w-28", "w-24", "w-32"].map((w) => (
+          <li key={w} className="flex items-center justify-between gap-4 py-5">
+            <span className={`h-5 ${w} rounded-md bg-line`} />
+            <span className="h-9 w-28 rounded-full bg-line" />
+          </li>
+        ))}
+      </ul>
+      <div className="my-5 flex justify-center">
+        <span className="h-[4.25rem] w-64 animate-pulse rounded-full bg-line" />
+      </div>
+    </div>
   );
 }
 
