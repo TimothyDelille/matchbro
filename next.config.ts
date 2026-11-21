@@ -16,6 +16,9 @@ const nextConfig: NextConfig = {
   },
   skipTrailingSlashRedirect: true,
   partialPrefetching: true,
+  experimental: {
+    agentUpgrade: "security",
+  },
   turbopack: {
     rules: {
       "*.css": {
