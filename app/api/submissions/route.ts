@@ -1,7 +1,8 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { BUCKET, configError, createAccount, getSetting, supabaseAdmin, sweepExpiredUploads } from "@/lib/supabase/admin";
 import { currentUser, supabaseServer } from "@/lib/supabase/server";
-import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES } from "@/lib/limits";
+import { ACCEPTED_TYPES, MAX_FILES } from "@/lib/limits";
+import { guestEmail } from "@/lib/guest";
 import { cleanAnswers } from "@/lib/onboarding";
 
 type FileMeta = { name: string; type: string; size: number };
@@ -11,12 +12,12 @@ const fail = (error: string, status = 400) => Response.json({ error }, { status 
 const safeName = (name: string) =>
   name.normalize("NFKD").replace(/[^\w.\-]+/g, "_").slice(-80) || "file";
 
-/** Step 1: create/find the account, reserve a slot, hand back signed upload URLs. */
+/** Step 1: use their session or create a guest account, reserve a slot, hand back signed upload URLs. */
 export async function POST(req: Request) {
   const misconfigured = configError();
   if (misconfigured) return fail(misconfigured, 500);
 
-  let body: { email?: string; files?: FileMeta[]; website?: string; onboarding?: unknown };
+  let body: { files?: FileMeta[]; website?: string; onboarding?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -26,12 +27,8 @@ export async function POST(req: Request) {
   if (body.website) return fail("Invalid request."); // honeypot
 
   const sessionUser = await currentUser();
-  const email = (body.email ?? "").trim().toLowerCase();
   const files = Array.isArray(body.files) ? body.files : [];
 
-  if (!sessionUser) {
-    if (!EMAIL_RE.test(email)) return fail("Enter a valid email address.");
-  }
   if (files.length === 0) return fail("Add at least one recording or screenshot.");
   if (files.length > MAX_FILES) return fail(`You can add up to ${MAX_FILES} files.`);
   if (files.some((f) => !ACCEPTED_TYPES.includes(f.type))) {
@@ -52,26 +49,19 @@ export async function POST(req: Request) {
     userId = sessionUser.id;
   } else {
     try {
-      // Email-only signup: a random password nobody sees, used once to start the session.
-      // They sign in later with a one-time code sent to their email (/signin).
+      // Guest account: no email yet. Stripe Checkout asks for it, and it replaces
+      // the placeholder after payment (lib/guest.ts). The random password is only
+      // used once, here, to start the session; they sign in later with a code.
+      const email = guestEmail(randomUUID());
       const password = randomBytes(24).toString("base64url");
       const created = await createAccount(email, null, password);
-      if (!created) {
-        return Response.json(
-          { error: "You already have an account with this email. Sign in to send another profile.", signIn: true },
-          { status: 409 },
-        );
-      }
+      if (!created) throw new Error("guest email collision");
       userId = created;
-      // Sign them in right away (sets the session cookie on this response).
-      const { error: signInError } = await (await supabaseServer()).auth.signInWithPassword({
-        email,
-        password,
-      });
-      if (signInError) console.error("sign in after sign up", signInError);
+      const { error: signInError } = await (await supabaseServer()).auth.signInWithPassword({ email, password });
+      if (signInError) console.error("sign in guest", signInError);
     } catch (e) {
       console.error("account", e);
-      return fail("We couldn't create your account. Try again.", 500);
+      return fail("Something went wrong. Try again.", 500);
     }
   }
 

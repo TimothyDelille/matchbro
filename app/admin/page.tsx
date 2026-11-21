@@ -4,6 +4,7 @@ import { requireAdmin } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import AdminHeader from "@/components/admin/AdminHeader";
 import PaidPill from "@/components/admin/PaidPill";
+import { accountLabel } from "@/lib/guest";
 
 type Row = {
   id: string;
@@ -111,7 +112,7 @@ function Group({
                 >
                   <span className="text-muted tabular-nums">{when.format(new Date(r.submitted_at ?? r.created_at))}</span>
                   <span className="truncate font-semibold sm:order-none order-first col-span-3 sm:col-span-1">
-                    {p?.email ?? "Unknown user"}
+                    {accountLabel(p?.email)}
                     <span className="ml-3 font-normal text-muted">{p?.phone}</span>
                   </span>
                   <PaidPill paidAt={r.paid_at} locked={r.unlock_required} />
@@ -148,7 +149,7 @@ function Questions({
             >
               <span className="text-muted tabular-nums">{when.format(new Date(q.created_at))}</span>
               <span className="min-w-0 sm:order-none order-first col-span-2 sm:col-span-1">
-                <span className="block truncate font-semibold">{who.get(q.user_id)?.email ?? "Unknown user"}</span>
+                <span className="block truncate font-semibold">{accountLabel(who.get(q.user_id)?.email)}</span>
                 <span className="block truncate text-muted">{q.question}</span>
               </span>
               <span className="rounded-full bg-flame px-3 py-1 text-sm font-semibold text-paper">💬 Answer</span>

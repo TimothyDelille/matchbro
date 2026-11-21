@@ -11,6 +11,7 @@ import FollowUpAnswer from "@/components/admin/FollowUpAnswer";
 import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { SCORE_COLUMNS, scoresFromRow } from "@/lib/score";
 import { describeOnboarding } from "@/lib/onboarding";
+import { accountLabel } from "@/lib/guest";
 
 const when = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -71,7 +72,7 @@ async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">
         ← All submissions
       </Link>
       <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
-        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">{profile?.email ?? "Unknown user"}</h1>
+        <h1 className="text-3xl sm:text-4xl font-extrabold tracking-tight">{accountLabel(profile?.email)}</h1>
         <span className="text-muted">{profile?.phone}</span>
         <span className="text-muted">
           {sub.submitted_at

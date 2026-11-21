@@ -52,7 +52,12 @@ async function Review({
 
   // Back from unlocking on Stripe: confirm right away instead of waiting for the webhook.
   const sessionId = typeof query.session_id === "string" ? query.session_id : null;
-  const payment = sessionId ? await confirmCheckout(sessionId, user.id) : null;
+  const result = sessionId ? await confirmCheckout(sessionId, user.id) : null;
+  const payment = result?.status ?? null;
+  if (result?.status === "paid" && result.claim?.movedToExistingAccount && result.claim.email) {
+    // The review now belongs to the account that already had this email.
+    redirect(`/home?moved=${encodeURIComponent(result.claim.email)}&next=${encodeURIComponent(`/reviews/${id}`)}`);
+  }
 
   // Owners read their own submission through RLS; admins can see any.
   const { data: sub } = await (admin ? supabaseAdmin() : supabase)

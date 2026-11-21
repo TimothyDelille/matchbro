@@ -5,6 +5,7 @@ import LandingView from "@/components/LandingView";
 import SubmitSheet from "@/components/SubmitSheet";
 import { currentUser } from "@/lib/supabase/server";
 import { isDemoUser } from "@/lib/demo";
+import { isGuestEmail } from "@/lib/guest";
 
 const pill =
   "inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:border-ink";
@@ -12,9 +13,11 @@ const CTA = "Get My Score";
 
 async function AccountLink() {
   const user = await currentUser();
+  // Guests (an earlier upload they never paid for) still see "Sign in".
+  const member = user && !isGuestEmail(user.email);
   return (
-    <Link href={user ? "/home" : "/signin"} className={pill}>
-      {user ? "Your reviews" : "Sign in"}
+    <Link href={member ? "/home" : "/signin"} className={pill}>
+      {member ? "Your reviews" : "Sign in"}
     </Link>
   );
 }

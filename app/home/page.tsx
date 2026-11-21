@@ -8,6 +8,7 @@ import { supabaseServer } from "@/lib/supabase/server";
 import { isDemoUser } from "@/lib/demo";
 import { getSetting } from "@/lib/supabase/admin";
 import { checkoutPriceLabel, confirmCheckout, isLocked } from "@/lib/stripe";
+import { safeNextPath } from "@/lib/next-path";
 
 type Submission = {
   id: string;
@@ -79,7 +80,12 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
   // Back from Stripe: confirm right away instead of waiting for the webhook.
   const params = await searchParams;
   const sessionId = typeof params.session_id === "string" ? params.session_id : null;
-  const payment = sessionId ? await confirmCheckout(sessionId, user.id) : null;
+  const result = sessionId ? await confirmCheckout(sessionId, user.id) : null;
+  const payment = result?.status ?? null;
+  const claim = result?.status === "paid" ? result.claim : null;
+  // Paid with an email that already had an account (here, or from an unlock on a review page).
+  const movedTo = claim?.movedToExistingAccount ? claim.email : typeof params.moved === "string" ? params.moved : null;
+  const movedNext = safeNextPath(typeof params.next === "string" ? params.next : null) ?? "/home";
   const cancelled = params.checkout === "cancelled";
 
   const [{ data }, priceLabel, windowMinutes, { data: followUps }] = await Promise.all([
@@ -106,10 +112,15 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
         </h1>
       </div>
 
-      {payment === "paid" && (
-        <p role="status" className="mt-8 rounded-2xl bg-flame/10 px-5 py-4 font-medium">
-          Payment received. We will send you an email once we reviewed your profile 🔥
-        </p>
+      {movedTo ? (
+        <AccountExists email={movedTo} next={movedNext} />
+      ) : (
+        payment === "paid" && (
+          <p role="status" className="mt-8 rounded-2xl bg-flame/10 px-5 py-4 font-medium">
+            Payment received. We&apos;ll email {claim?.email ? <strong>{claim.email}</strong> : "you"} as soon as your
+            review is ready 🔥
+          </p>
+        )
       )}
       {payment === "paid" && <HeardFrom />}
       {payment === "pending" && (
@@ -163,6 +174,25 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
       <div className="flex justify-center my-5"><SubmitSheet account={{ email: user.email ?? "", demo: isDemoUser(user) }} /></div>
 
     </>
+  );
+}
+
+/** They paid with an email that already has an account: the review is there, so sign in to it. */
+function AccountExists({ email, next }: { email: string; next: string }) {
+  return (
+    <div role="status" className="mt-8 rounded-2xl bg-flame/10 px-5 py-5">
+      <p className="font-bold">Payment received 🔥</p>
+      <p className="mt-1">
+        <strong>{email}</strong> already has an account, so we added this review to it. Sign in with that email to
+        see it.
+      </p>
+      <form action="/auth/signout" method="post" className="mt-4">
+        <input type="hidden" name="next" value={`/signin?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`} />
+        <button className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-paper hover:bg-flame">
+          Sign in as {email}
+        </button>
+      </form>
+    </div>
   );
 }
 

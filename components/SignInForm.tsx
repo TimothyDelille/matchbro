@@ -26,9 +26,11 @@ const OTP_LENGTH = 6;
 export default function SignInForm() {
   const router = useRouter();
   // e.g. /signin?next=/reviews/abc from a review link: go back there after signing in.
-  const next = safeNextPath(useSearchParams().get("next"));
+  const params = useSearchParams();
+  const next = safeNextPath(params.get("next"));
   const [step, setStep] = useState<Step>("email");
-  const [email, setEmail] = useState("");
+  // Prefilled when we send them here to sign in to an account they already have.
+  const [email, setEmail] = useState(params.get("email") ?? "");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);

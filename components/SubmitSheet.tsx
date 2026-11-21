@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
 import { readJson, uploadToSignedUrl } from "@/lib/upload";
-import { ACCEPTED_TYPES, EMAIL_RE, MAX_FILES, MAX_SUBMISSION_MB } from "@/lib/limits";
+import { ACCEPTED_TYPES, MAX_FILES, MAX_SUBMISSION_MB } from "@/lib/limits";
+import { realEmail } from "@/lib/guest";
 import { QUESTIONS, loadAnswers, optionOf, saveAnswers, type Answers, type Question } from "@/lib/onboarding";
 import { LOCKED_PREVIEW } from "@/lib/locked-preview";
 import type { MediaItem } from "@/lib/report";
@@ -27,7 +28,7 @@ type View =
 type Outcome = { checkoutUrl?: string; priceLabel?: string | null };
 
 type Props = {
-  /** Set when the visitor is signed in: no account fields, uses their session. */
+  /** Set when the visitor is signed in (or a guest from an earlier upload): uses their session. */
   account?: { email: string; demo?: boolean };
   /** Button text. Defaults to "Review My Profile". */
   label?: string;
@@ -68,7 +69,6 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
   const [view, setView] = useState<View>(questions.length ? { kind: "question", index: 0 } : { kind: "upload" });
   const [answers, setAnswers] = useState<Answers>({});
   const [items, setItems] = useState<Item[]>([]);
-  const [email, setEmail] = useState(account?.email ?? "");
   const [error, setError] = useState<string | null>(null);
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -80,6 +80,8 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const advance = useRef<ReturnType<typeof setTimeout>>(undefined);
   const demo = Boolean(account?.demo);
+  /** Guests (uploaded before, never paid) have no email to show. */
+  const signedInAs = realEmail(account?.email);
   const busy = starting || redirecting || view.kind === "preparing";
 
   useEffect(() => {
@@ -179,7 +181,6 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
 
     if (!files.length) return setError("Add your screenshots first.");
     if (tooBig) return setError(`Keep it under ${MAX_SUBMISSION_MB} MB total.`);
-    if (!account && !EMAIL_RE.test(email.trim())) return setError("Enter a valid email address.");
 
     setStarting(true);
     track("submission_started", { files: files.length, mb: Math.round(totalBytes / 1e5) / 10, signed_in: Boolean(account) });
@@ -188,7 +189,6 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...(account ? {} : { email }),
           website,
           onboarding: answers,
           files: files.map((f) => ({ name: f.name, type: f.type, size: f.size })),
@@ -436,33 +436,13 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
                 )}
               </div>
 
-              {account ? (
+              {signedInAs && (
                 <p className="mt-5 text-sm text-muted">
-                  Signed in as <span className="text-ink font-medium">{account.email}</span>
+                  Signed in as <span className="text-ink font-medium">{signedInAs}</span>
                 </p>
-              ) : (
-                <div className="mt-5">
-                  <label htmlFor="submit-email" className="text-sm font-semibold">
-                    Where should we send your score?
-                  </label>
-                  <input
-                    id="submit-email"
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    autoCapitalize="none"
-                    autoCorrect="off"
-                    spellCheck={false}
-                    placeholder="you@email.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    disabled={busy}
-                    className="mt-2 w-full rounded-xl border border-line bg-paper px-4 py-3.5 text-base outline-none focus:border-ink"
-                  />
-                  {/* honeypot */}
-                  <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden />
-                </div>
               )}
+              {/* honeypot */}
+              <input type="text" name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden />
 
               {error && (
                 <p role="alert" className="mt-4 text-sm text-flame-deep">

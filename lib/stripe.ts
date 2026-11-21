@@ -1,6 +1,8 @@
 import "server-only";
 import Stripe from "stripe";
 import { BUCKET, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
+import { isGuestEmail, realEmail } from "@/lib/guest";
+import { EMAIL_RE } from "@/lib/limits";
 
 /**
  * Stripe is the single source of truth for what a review costs: a Price with
@@ -145,7 +147,8 @@ export async function checkoutForSubmission(
     mode: "payment",
     line_items: [{ price: price.id, quantity: 1 }],
     client_reference_id: sub.id,
-    customer_email: profile?.email ?? undefined,
+    // Guests have no email yet: Checkout asks for it (and we keep it after payment).
+    customer_email: realEmail(profile?.email) ?? undefined,
     metadata,
     payment_intent_data: { metadata },
     success_url: `${origin}/home?session_id={CHECKOUT_SESSION_ID}`,
@@ -207,7 +210,8 @@ export async function checkoutForUnlock(
     mode: "payment",
     line_items: [{ price: price.id, quantity: 1 }],
     client_reference_id: sub.id,
-    customer_email: profile?.email ?? undefined,
+    // Guests have no email yet: Checkout asks for it (and we keep it after payment).
+    customer_email: realEmail(profile?.email) ?? undefined,
     metadata,
     payment_intent_data: { metadata },
     success_url: `${reviewUrl}?session_id={CHECKOUT_SESSION_ID}`,
@@ -227,11 +231,20 @@ export async function checkoutForUnlock(
   return session.url;
 }
 
+/** What happened to the account's email after a payment. */
+export type EmailClaim = {
+  /** The email the account now uses (null if Stripe gave us none). */
+  email: string | null;
+  /** The email already had another account: the review was moved there. */
+  movedToExistingAccount: boolean;
+};
+
 /**
- * Record a paid Checkout Session and queue its submission. Idempotent: the
- * webhook and the success page can both call it.
+ * Record a paid Checkout Session, queue its submission, and give a guest account
+ * the email they typed on Stripe. Idempotent: the webhook and the success page
+ * can both call it. Returns null for sessions that aren't paid (yet).
  */
-export async function markSessionPaid(session: Stripe.Checkout.Session): Promise<string | null> {
+export async function markSessionPaid(session: Stripe.Checkout.Session): Promise<EmailClaim | null> {
   const submissionId = session.metadata?.submission_id;
   const userId = session.metadata?.user_id;
   if (!submissionId || !userId || session.payment_status !== "paid") return null;
@@ -245,7 +258,7 @@ export async function markSessionPaid(session: Stripe.Checkout.Session): Promise
 
   const paymentIntent =
     typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null);
-  const { data, error } = await db.rpc("mark_submission_paid", {
+  const { error } = await db.rpc("mark_submission_paid", {
     p_session_id: session.id,
     p_payment_intent: paymentIntent,
     p_amount: session.amount_total,
@@ -253,7 +266,47 @@ export async function markSessionPaid(session: Stripe.Checkout.Session): Promise
     p_livemode: session.livemode,
   });
   if (error) throw error;
-  return data as string;
+
+  return claimPaidEmail(userId, submissionId, session.customer_details?.email);
+}
+
+/**
+ * After payment, swap a guest account's placeholder for the email typed on Stripe.
+ * If that email already has an account, the paid submission moves to it instead
+ * (they sign in to see it): typing someone's email on Stripe never signs you
+ * into their account. Safe to run more than once.
+ */
+async function claimPaidEmail(userId: string, submissionId: string, stripeEmail: string | null | undefined): Promise<EmailClaim> {
+  const db = supabaseAdmin();
+  const { data: profile } = await db.from("profiles").select("email").eq("id", userId).maybeSingle();
+  const email = stripeEmail?.trim().toLowerCase() ?? "";
+
+  // A real account paying (or no usable email from Stripe): nothing to do.
+  if (!profile || !isGuestEmail(profile.email) || !EMAIL_RE.test(email) || isGuestEmail(email)) {
+    return { email: realEmail(profile?.email), movedToExistingAccount: false };
+  }
+
+  const { data: owner } = await db.from("profiles").select("id").eq("email", email).maybeSingle();
+
+  if (owner && owner.id !== userId) {
+    // Every row of this submission that names an owner.
+    for (const table of ["payments", "reports", "follow_ups"] as const) {
+      const { error } = await db.from(table).update({ user_id: owner.id }).eq("submission_id", submissionId);
+      if (error) throw error;
+    }
+    const { error } = await db.from("submissions").update({ user_id: owner.id }).eq("id", submissionId);
+    if (error) throw error;
+    return { email, movedToExistingAccount: true };
+  }
+
+  if (!owner) {
+    // Confirmed straight away: they just proved it on Stripe's receipt, and this sends no email.
+    const { error: authError } = await db.auth.admin.updateUserById(userId, { email, email_confirm: true });
+    if (authError) throw authError;
+    const { error } = await db.from("profiles").update({ email }).eq("id", userId);
+    if (error) throw error;
+  }
+  return { email, movedToExistingAccount: false };
 }
 
 /** Base URL for Stripe redirects: APP_URL if set, else wherever the request came in. */
@@ -271,16 +324,19 @@ export async function checkoutPriceLabel(): Promise<string | null> {
   }
 }
 
+export type CheckoutResult =
+  | { status: "paid"; claim: EmailClaim | null }
+  | { status: "pending" | "invalid" };
+
 /** Success-page check: confirm the session belongs to this user and queue it if paid. */
-export async function confirmCheckout(sessionId: string, userId: string): Promise<"paid" | "pending" | "invalid"> {
+export async function confirmCheckout(sessionId: string, userId: string): Promise<CheckoutResult> {
   try {
     const session = await stripe().checkout.sessions.retrieve(sessionId);
-    if (session.metadata?.user_id !== userId) return "invalid";
-    if (session.payment_status !== "paid") return "pending";
-    await markSessionPaid(session);
-    return "paid";
+    if (session.metadata?.user_id !== userId) return { status: "invalid" };
+    if (session.payment_status !== "paid") return { status: "pending" };
+    return { status: "paid", claim: await markSessionPaid(session) };
   } catch (e) {
     console.error("confirm checkout", e);
-    return "invalid";
+    return { status: "invalid" };
   }
 }
