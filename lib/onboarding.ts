@@ -141,3 +141,14 @@ export function saveAnswers(answers: Answers) {
     // Private mode / storage full: the quiz still works for this visit.
   }
 }
+
+/** Forgets everything this browser remembered (quiz answers, "heard from"), e.g. on sign out. */
+export function clearLocalState() {
+  try {
+    for (const key of Object.keys(localStorage)) {
+      if (key.startsWith("mb_")) localStorage.removeItem(key);
+    }
+  } catch {
+    // Storage unavailable: nothing was saved either.
+  }
+}

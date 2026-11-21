@@ -12,6 +12,7 @@ import { LOCKED_PREVIEW } from "@/lib/locked-preview";
 import type { MediaItem } from "@/lib/report";
 import { getDemoMedia, setDemoMedia } from "@/lib/demo-store";
 import DemoAnalyzing, { AnalyzingPanel } from "@/components/DemoAnalyzing";
+import { CTA_BUTTON } from "@/lib/ui";
 
 /** A picked file plus a local preview URL. */
 type Item = { file: File; url: string; kind: MediaItem["kind"] };
@@ -285,7 +286,7 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
         type="button"
         disabled={full && !demo}
         onClick={open}
-        className="inline-flex items-center justify-center rounded-full bg-flame px-9 py-5 text-xl font-bold text-paper shadow-[0_10px_0_-2px_var(--flame-deep)] transition active:translate-y-1 active:shadow-[0_6px_0_-2px_var(--flame-deep)] hover:bg-flame-deep disabled:bg-line disabled:text-muted disabled:shadow-none disabled:cursor-not-allowed"
+        className={CTA_BUTTON}
       >
         {full && !demo ? "We're full — back soon" : label}
       </button>

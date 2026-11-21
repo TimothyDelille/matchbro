@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SignOutForm from "@/components/SignOutForm";
 
 export default function AdminHeader({ wide = false }: { wide?: boolean }) {
   return (
@@ -6,9 +7,9 @@ export default function AdminHeader({ wide = false }: { wide?: boolean }) {
       <Link href="/admin" className="text-lg font-extrabold tracking-tight">
         matchbro.app 🔥 <span className="ml-1 rounded-md bg-ink px-2 py-0.5 text-xs text-paper align-middle">admin</span>
       </Link>
-      <form action="/auth/signout" method="post">
+      <SignOutForm>
         <button className="text-sm text-muted hover:text-ink">Sign out</button>
-      </form>
+      </SignOutForm>
     </header>
   );
 }

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import HeardFrom from "@/components/HeardFrom";
 import PayButton from "@/components/PayButton";
 import SubmitSheet from "@/components/SubmitSheet";
+import SignOutForm from "@/components/SignOutForm";
 import { supabaseServer } from "@/lib/supabase/server";
 import { isDemoUser } from "@/lib/demo";
 import { getSetting } from "@/lib/supabase/admin";
@@ -41,11 +42,11 @@ export default function Home({ searchParams }: PageProps<"/home">) {
         <Link href="/" className="text-lg font-extrabold tracking-tight">
           matchbro.app 🔥
         </Link>
-        <form action="/auth/signout" method="post">
+        <SignOutForm>
           <button className="text-sm text-muted hover:text-ink">
             Sign out
           </button>
-        </form>
+        </SignOutForm>
       </header>
 
       <section className="mx-auto w-full max-w-3xl px-5 sm:px-8 py-14">
@@ -186,12 +187,11 @@ function AccountExists({ email, next }: { email: string; next: string }) {
         <strong>{email}</strong> already has an account, so we added this review to it. Sign in with that email to
         see it.
       </p>
-      <form action="/auth/signout" method="post" className="mt-4">
-        <input type="hidden" name="next" value={`/signin?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`} />
+      <SignOutForm className="mt-4" next={`/signin?email=${encodeURIComponent(email)}&next=${encodeURIComponent(next)}`}>
         <button className="rounded-full bg-ink px-5 py-2.5 text-sm font-bold text-paper hover:bg-flame">
           Sign in as {email}
         </button>
-      </form>
+      </SignOutForm>
     </div>
   );
 }
