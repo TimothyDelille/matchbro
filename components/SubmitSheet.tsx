@@ -8,7 +8,6 @@ import { readJson, uploadToSignedUrl } from "@/lib/upload";
 import { ACCEPTED_TYPES, MAX_FILES, MAX_SUBMISSION_MB } from "@/lib/limits";
 import { realEmail } from "@/lib/guest";
 import { QUESTIONS, loadAnswers, optionOf, saveAnswers, type Answers, type Question } from "@/lib/onboarding";
-import { LOCKED_PREVIEW } from "@/lib/locked-preview";
 import type { MediaItem } from "@/lib/report";
 import { getDemoMedia, setDemoMedia } from "@/lib/demo-store";
 import DemoAnalyzing, { AnalyzingPanel } from "@/components/DemoAnalyzing";
@@ -54,7 +53,6 @@ const PREPARE_MS = 5000;
 const ADVANCE_MS = 240;
 
 /** Sections of the blurred preview on the paywall; the one they asked us to focus on goes first. */
-const PREVIEW_SECTIONS = ["Photos", "Prompts", "Try this next"];
 
 function mb(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
@@ -520,12 +518,13 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
                   : "A real review of your profile, written for you."}
               </p>
 
-              <LockedPreview promptsFirst={focus?.value === "prompts"} />
-              <p className="mt-3 text-sm text-muted">
-                Plus a step-by-step plan to get more likes, and a free follow-up question.
+              <LockedPreview items={items} promptsFirst={focus?.value === "prompts"} />
+              <p className="mt-3 pb-2 text-sm text-muted">
+                Plus a free follow-up question. We&apos;ll email you as soon as your review is ready.
               </p>
 
-              <div className="mt-auto pt-8">
+              {/* Stays in view while the preview scrolls behind it. */}
+              <div className="sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 bg-linear-to-t from-paper from-80% to-paper/0 px-6 pt-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:-mx-8 sm:-mb-8 sm:px-8 sm:pb-8">
                 <button
                   type="button"
                   onClick={() => checkout(view.checkoutUrl)}
@@ -534,11 +533,7 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
                 >
                   {redirecting ? "One sec…" : `Unlock my score${view.priceLabel ? ` · ${view.priceLabel}` : ""}`}
                 </button>
-                <p className="mt-6 text-center text-xs text-muted">
-                  One-time payment. Secure checkout by Stripe.
-                  <br />
-                  We&apos;ll email you as soon as your review is ready.
-                </p>
+                <p className="mt-5 text-center text-xs text-muted">One-time payment. Secure checkout by Stripe.</p>
               </div>
             </div>
           )}
@@ -612,56 +607,114 @@ function QuestionStep({
 }
 
 /**
- * What they're paying for, locked: the score ring and the review's sections, text blurred.
- * The score shows a lock, not a number, because the review is written after payment.
+ * What they're paying for, locked. Nothing here is a real result (the review is
+ * written after payment): the number is a blurred "??", the bars and answers are
+ * stand-ins. What is real: their own screenshots, and what the review covers.
  */
-function LockedPreview({ promptsFirst }: { promptsFirst: boolean }) {
-  const order = promptsFirst ? ["Prompts", "Photos", "Try this next"] : PREVIEW_SECTIONS;
-  const sections = order.map((h) => LOCKED_PREVIEW.find(([heading]) => heading === h)!);
+function LockedPreview({ items, promptsFirst }: { items: Item[]; promptsFirst: boolean }) {
+  const findings = promptsFirst ? [FINDINGS[2], FINDINGS[0], FINDINGS[1], FINDINGS[3]] : FINDINGS;
+  const shown = items.slice(0, 4);
+  const extra = items.length - shown.length;
   return (
-    <div className="relative mt-6 max-h-[21rem] overflow-hidden rounded-2xl border border-line">
-      <div className="flex items-center gap-4 border-b border-line px-4 py-3">
-        <span className="relative grid size-14 shrink-0 place-items-center">
-          <svg width="56" height="56" viewBox="0 0 56 56" aria-hidden className="absolute inset-0 -rotate-90">
-            <circle cx="28" cy="28" r="25" fill="none" strokeWidth="5" className="stroke-line" />
-            <circle
-              cx="28"
-              cy="28"
-              r="25"
-              fill="none"
-              strokeWidth="5"
-              strokeLinecap="round"
-              strokeDasharray="157"
-              strokeDashoffset="55"
-              className="stroke-flame/50 blur-[2px]"
-            />
-          </svg>
-          <Lock />
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block font-bold">Your profile score</span>
-          <span className="text-sm text-muted">Out of 100</span>
-        </span>
-        <span className="rounded-full bg-ink px-3 py-1 text-xs font-bold text-paper">Locked</span>
-      </div>
-      <div className="space-y-4 px-4 py-4">
-        {sections.map(([heading, body]) => (
-          <div key={heading}>
-            <h3 className="font-bold">{heading}</h3>
-            <p aria-hidden className="mt-1 line-clamp-2 select-none text-sm leading-relaxed text-ink/80 blur-[5px]">
-              {body}
-            </p>
+    <div className="mt-6 overflow-hidden rounded-2xl border border-line bg-paper shadow-[0_14px_30px_-18px_rgb(23_18_28/0.35)]">
+      <div className="flex items-center gap-3 bg-flame/[0.07] px-4 py-4">
+        <div className="shrink-0 text-center">
+          <p className="flex items-baseline font-extrabold tracking-tight text-flame">
+            <span aria-hidden className="select-none text-[2.75rem] leading-none blur-[8px]">
+              88
+            </span>
+            <span className="text-base text-ink/50">/100</span>
+          </p>
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-bold whitespace-nowrap">Your Hinge score</p>
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-ink px-2 py-1 text-[0.7rem] font-bold text-paper">
+              <Lock size={12} />
+              Locked
+            </span>
           </div>
-        ))}
+          <div className="mt-2.5 space-y-2">
+            {SCORE_BARS.map(([label, width]) => (
+              <div key={label} className="flex items-center gap-2 text-xs font-semibold text-muted">
+                <span className="w-14 shrink-0">{label}</span>
+                <span className="h-2 flex-1 overflow-hidden rounded-full bg-line">
+                  <span aria-hidden className="block h-full rounded-full bg-flame blur-[3px]" style={{ width }} />
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
-      <div aria-hidden className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-linear-to-b from-paper/0 to-paper" />
+
+      {shown.length > 0 && (
+        <div className="border-t border-line px-4 py-4">
+          <p className="text-sm font-bold">A verdict on every screenshot</p>
+          <ul className="mt-2.5 grid grid-cols-4 gap-2">
+            {shown.map((item, i) => (
+              <li key={item.url} className="relative aspect-[3/4] overflow-hidden rounded-lg bg-line">
+                {item.kind === "video" ? (
+                  <video src={item.url} muted playsInline preload="metadata" className="absolute inset-0 h-full w-full object-cover" />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element -- local object URL
+                  <img
+                    src={item.url}
+                    alt=""
+                    onError={(e) => (e.currentTarget.style.display = "none")}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                )}
+                {i === shown.length - 1 && extra > 0 ? (
+                  <span className="absolute inset-0 grid place-items-center bg-ink/60 text-sm font-bold text-paper">+{extra}</span>
+                ) : (
+                  <span className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded-full bg-paper/95 py-1 text-[0.65rem] font-bold">
+                    <Lock size={10} />
+                    <span aria-hidden className="select-none blur-[3px]">
+                      {VERDICTS[i % VERDICTS.length]}
+                    </span>
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      <ul className="divide-y divide-line border-t border-line">
+        {findings.map(([title, standIn]) => (
+          <li key={title} className="flex items-start gap-3 px-4 py-3">
+            <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-flame/10 text-flame">
+              <Lock size={12} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold">{title}</span>
+              <span aria-hidden className="mt-0.5 block select-none truncate text-sm text-ink/70 blur-[4px]">
+                {standIn}
+              </span>
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-function Lock() {
+/** Stand-in widths and words shown blurred; none of it is a real result. */
+const SCORE_BARS = [
+  ["Pictures", "62%"],
+  ["Prompts", "41%"],
+] as const;
+const VERDICTS = ["Keep", "Cut it", "Move up", "Keep"];
+const FINDINGS = [
+  ["The photo to put first", "Lead with the one where you can see your face clearly"],
+  ["What to cut today", "The group shot is doing you no favors at all here"],
+  ["Your weakest prompt, rewritten", "Swap it for something they can actually reply to"],
+  ["Your next moves to get more likes", "Reorder the photos, then try the opener below"],
+] as const;
+
+function Lock({ size = 20 }: { size?: number }) {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden className="relative">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" aria-hidden className="relative">
       <rect x="5" y="11" width="14" height="9" rx="2.5" fill="currentColor" />
       <path d="M8 11V8a4 4 0 0 1 8 0v3" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
     </svg>
