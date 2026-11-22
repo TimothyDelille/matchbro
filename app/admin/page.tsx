@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import Link from "next/link";
+import { connection } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import AdminHeader from "@/components/admin/AdminHeader";
@@ -42,6 +43,7 @@ export default function AdminPage() {
 }
 
 async function Submissions() {
+  await connection();
   await requireAdmin();
   const db = supabaseAdmin();
 

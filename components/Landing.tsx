@@ -6,7 +6,6 @@ import SubmitSheet from "@/components/SubmitSheet";
 import { currentUser } from "@/lib/supabase/server";
 import { isDemoUser } from "@/lib/demo";
 import { isGuestEmail } from "@/lib/guest";
-import { CTA_BUTTON } from "@/lib/ui";
 
 const pill =
   "inline-flex min-h-11 items-center rounded-full border border-line px-5 text-sm font-semibold hover:border-ink";
@@ -25,14 +24,6 @@ async function AccountLink() {
 
 async function Submit() {
   const user = await currentUser();
-  // Members already did the quiz: send them to their reviews instead of starting over.
-  if (user && !isGuestEmail(user.email)) {
-    return (
-      <Link href="/home" className={CTA_BUTTON}>
-        {CTA}
-      </Link>
-    );
-  }
   return <SubmitSheet onboarding label={CTA} account={user ? { email: user.email ?? "", demo: isDemoUser(user) } : undefined} />;
 }
 

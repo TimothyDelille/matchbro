@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { connection } from "next/server";
 import HeardFrom from "@/components/HeardFrom";
 import PayButton from "@/components/PayButton";
 import SubmitSheet from "@/components/SubmitSheet";
@@ -89,6 +90,8 @@ function ReviewsSkeleton() {
 }
 
 async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["searchParams"] }) {
+  // Request time only: this reads the clock and can confirm a Stripe payment, neither of which belongs in a prefetch.
+  await connection();
   const supabase = await supabaseServer();
   const {
     data: { user },
@@ -224,7 +227,9 @@ function Status({
 }) {
   if (status === "queued" || status === "reviewing") {
     return (
-      <span className="text-flame-deep font-medium">Currently being reviewed ⏳</span>
+      <Link href={`/reviews/${id}`} className="text-flame-deep font-medium hover:underline">
+        Currently being reviewed ⏳
+      </Link>
     );
   }
   return (

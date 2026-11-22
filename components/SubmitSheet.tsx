@@ -52,8 +52,6 @@ const PREPARE_MS = 5000;
 /** Pause on a tapped answer before moving on, so the selection is seen. */
 const ADVANCE_MS = 240;
 
-/** Sections of the blurred preview on the paywall; the one they asked us to focus on goes first. */
-
 function mb(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(bytes < 10 * 1024 * 1024 ? 1 : 0)} MB`;
 }
@@ -608,11 +606,11 @@ function QuestionStep({
 
 /**
  * What they're paying for, locked. Nothing here is a real result (the review is
- * written after payment): the number is a blurred "??", the bars and answers are
- * stand-ins. What is real: their own screenshots, and what the review covers.
+ * written after payment): the scores are blurred stand-ins and so is the text.
+ * What is real: their own screenshots, and the two sections the review covers.
  */
 function LockedPreview({ items, promptsFirst }: { items: Item[]; promptsFirst: boolean }) {
-  const findings = promptsFirst ? [FINDINGS[2], FINDINGS[0], FINDINGS[1], FINDINGS[3]] : FINDINGS;
+  const sections = promptsFirst ? [SECTIONS[1], SECTIONS[0]] : SECTIONS;
   const shown = items.slice(0, 4);
   const extra = items.length - shown.length;
   return (
@@ -634,12 +632,15 @@ function LockedPreview({ items, promptsFirst }: { items: Item[]; promptsFirst: b
               Locked
             </span>
           </div>
-          <div className="mt-2.5 space-y-2">
-            {SCORE_BARS.map(([label, width]) => (
-              <div key={label} className="flex items-center gap-2 text-xs font-semibold text-muted">
-                <span className="w-14 shrink-0">{label}</span>
-                <span className="h-2 flex-1 overflow-hidden rounded-full bg-line">
-                  <span aria-hidden className="block h-full rounded-full bg-flame blur-[3px]" style={{ width }} />
+          <div className="mt-2 space-y-1">
+            {SUB_SCORES.map(([label, score]) => (
+              <div key={label} className="flex items-baseline gap-2 text-sm font-semibold text-muted">
+                <span className="w-16 shrink-0">{label}</span>
+                <span className="flex items-baseline font-extrabold text-flame">
+                  <span aria-hidden className="select-none text-lg leading-none blur-[5px]">
+                    {score}
+                  </span>
+                  <span className="text-xs text-ink/50">/100</span>
                 </span>
               </div>
             ))}
@@ -648,48 +649,42 @@ function LockedPreview({ items, promptsFirst }: { items: Item[]; promptsFirst: b
       </div>
 
       {shown.length > 0 && (
-        <div className="border-t border-line px-4 py-4">
-          <p className="text-sm font-bold">A verdict on every screenshot</p>
-          <ul className="mt-2.5 grid grid-cols-4 gap-2">
-            {shown.map((item, i) => (
-              <li key={item.url} className="relative aspect-[3/4] overflow-hidden rounded-lg bg-line">
-                {item.kind === "video" ? (
-                  <video src={item.url} muted playsInline preload="metadata" className="absolute inset-0 h-full w-full object-cover" />
-                ) : (
-                  // eslint-disable-next-line @next/next/no-img-element -- local object URL
-                  <img
-                    src={item.url}
-                    alt=""
-                    onError={(e) => (e.currentTarget.style.display = "none")}
-                    className="absolute inset-0 h-full w-full object-cover"
-                  />
-                )}
-                {i === shown.length - 1 && extra > 0 ? (
-                  <span className="absolute inset-0 grid place-items-center bg-ink/60 text-sm font-bold text-paper">+{extra}</span>
-                ) : (
-                  <span className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded-full bg-paper/95 py-1 text-[0.65rem] font-bold">
-                    <Lock size={10} />
-                    <span aria-hidden className="select-none blur-[3px]">
-                      {VERDICTS[i % VERDICTS.length]}
-                    </span>
-                  </span>
-                )}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <ul className="grid grid-cols-4 gap-2 border-t border-line px-4 py-4">
+          {shown.map((item, i) => (
+            <li key={item.url} className="relative aspect-[3/4] overflow-hidden rounded-lg bg-line">
+              {item.kind === "video" ? (
+                <video src={item.url} muted playsInline preload="metadata" className="absolute inset-0 h-full w-full object-cover" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element -- local object URL
+                <img
+                  src={item.url}
+                  alt=""
+                  onError={(e) => (e.currentTarget.style.display = "none")}
+                  className="absolute inset-0 h-full w-full object-cover"
+                />
+              )}
+              {i === shown.length - 1 && extra > 0 && (
+                <span className="absolute inset-0 grid place-items-center bg-ink/60 text-sm font-bold text-paper">+{extra}</span>
+              )}
+            </li>
+          ))}
+        </ul>
       )}
 
       <ul className="divide-y divide-line border-t border-line">
-        {findings.map(([title, standIn]) => (
-          <li key={title} className="flex items-start gap-3 px-4 py-3">
+        {sections.map(([title, lines]) => (
+          <li key={title} className="flex items-start gap-3 px-4 py-3.5">
             <span className="mt-0.5 grid size-6 shrink-0 place-items-center rounded-full bg-flame/10 text-flame">
               <Lock size={12} />
             </span>
             <span className="min-w-0 flex-1">
               <span className="block text-sm font-bold">{title}</span>
-              <span aria-hidden className="mt-0.5 block select-none truncate text-sm text-ink/70 blur-[4px]">
-                {standIn}
+              <span aria-hidden className="mt-1 block select-none space-y-0.5 text-sm leading-snug text-ink/70 blur-[4px]">
+                {lines.map((line) => (
+                  <span key={line} className="block">
+                    {line}
+                  </span>
+                ))}
               </span>
             </span>
           </li>
@@ -699,17 +694,30 @@ function LockedPreview({ items, promptsFirst }: { items: Item[]; promptsFirst: b
   );
 }
 
-/** Stand-in widths and words shown blurred; none of it is a real result. */
-const SCORE_BARS = [
-  ["Pictures", "62%"],
-  ["Prompts", "41%"],
+/** Stand-in scores and words shown blurred; none of it is a real result. */
+const SUB_SCORES = [
+  ["Pictures", "62"],
+  ["Prompts", "41"],
 ] as const;
-const VERDICTS = ["Keep", "Cut it", "Move up", "Keep"];
-const FINDINGS = [
-  ["The photo to put first", "Lead with the one where you can see your face clearly"],
-  ["What to cut today", "The group shot is doing you no favors at all here"],
-  ["Your weakest prompt, rewritten", "Swap it for something they can actually reply to"],
-  ["Your next moves to get more likes", "Reorder the photos, then try the opener below"],
+const SECTIONS = [
+  [
+    "Photos",
+    [
+      "Your first photo is carrying the whole profile right now, and the",
+      "second one undoes most of that work. The lighting is flat and the",
+      "angle hides your face. Swap the order, drop the group shot, and add",
+      "one where you are actually doing something.",
+    ],
+  ],
+  [
+    "Prompts",
+    [
+      "The answers read safe, which means nobody has a reason to reply.",
+      "Pick one prompt and make it specific enough to argue with. The",
+      "voice note is a good idea, but it needs a hook in the first",
+      "few seconds or it gets skipped.",
+    ],
+  ],
 ] as const;
 
 function Lock({ size = 20 }: { size?: number }) {

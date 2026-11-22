@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { connection } from "next/server";
 import { requireAdmin } from "@/lib/admin-auth";
 import { BUCKET, supabaseAdmin } from "@/lib/supabase/admin";
 import { referencedAssets, signAssets } from "@/lib/report";
@@ -32,6 +33,7 @@ export default function ReviewPage({ params }: PageProps<"/admin/submissions/[id
 }
 
 async function Review({ params }: { params: PageProps<"/admin/submissions/[id]">["params"] }) {
+  await connection();
   await requireAdmin();
   const { id } = await params;
   const db = supabaseAdmin();

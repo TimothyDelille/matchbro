@@ -1,10 +1,12 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { connection } from "next/server";
 import FollowUpSection from "@/components/FollowUpSection";
 import LockedReport from "@/components/LockedReport";
 import Markdown from "@/components/Markdown";
 import MediaCarousel from "@/components/MediaCarousel";
+import ReviewWaiting from "@/components/ReviewWaiting";
 import ScoreCard from "@/components/ScoreCard";
 import { isAdmin } from "@/lib/admin-auth";
 import { otherProfileScores, referencedAssets, signAssets, signSubmissionMedia } from "@/lib/report";
@@ -14,6 +16,8 @@ import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
 import { signInUrl } from "@/lib/next-path";
+import { aiReviewMode } from "@/lib/ai-review";
+import { realEmail } from "@/lib/guest";
 
 // Room for the AI review that can start when a payment is confirmed here (lib/ai-review).
 export const maxDuration = 300;
@@ -45,6 +49,8 @@ async function Review({
   params: PageProps<"/reviews/[id]">["params"];
   searchParams: PageProps<"/reviews/[id]">["searchParams"];
 }) {
+  // Request time only: this reads the clock and can confirm a Stripe payment, neither of which belongs in a prefetch.
+  await connection();
   const [{ id }, query] = await Promise.all([params, searchParams]);
   const supabase = await supabaseServer();
   const {
@@ -53,10 +59,11 @@ async function Review({
   if (!user) redirect(signInUrl(`/reviews/${id}`));
   const admin = isAdmin(user);
 
-  // Back from unlocking on Stripe: confirm right away instead of waiting for the webhook.
+  // Back from Stripe (paying for a review, or unlocking one): confirm right away instead of waiting for the webhook.
   const sessionId = typeof query.session_id === "string" ? query.session_id : null;
   const result = sessionId ? await confirmCheckout(sessionId, user.id) : null;
   const payment = result?.status ?? null;
+  const claimEmail = result?.status === "paid" ? result.claim?.email : null;
   if (result?.status === "paid" && result.claim?.movedToExistingAccount && result.claim.email) {
     // The review now belongs to the account that already had this email.
     redirect(`/home?moved=${encodeURIComponent(result.claim.email)}&next=${encodeURIComponent(`/reviews/${id}`)}`);
@@ -65,7 +72,7 @@ async function Review({
   // Owners read their own submission through RLS; admins can see any.
   const { data: sub } = await (admin ? supabaseAdmin() : supabase)
     .from("submissions")
-    .select("file_paths, unlock_required, paid_at")
+    .select("file_paths, unlock_required, paid_at, status")
     .eq("id", id)
     .maybeSingle();
   if (!sub) notFound();
@@ -80,7 +87,27 @@ async function Review({
     .select(`user_id, markdown, audio_path, published_at, ${SCORE_COLUMNS}`)
     .eq("submission_id", id)
     .maybeSingle();
-  if (!report || (!report.published_at && !admin)) notFound();
+  if (!report?.published_at && !(admin && report)) {
+    // Paid, review not out yet: "analyzing your profile" until it's published, then it renders here.
+    if ((sub.status === "queued" || sub.status === "reviewing") && sub.paid_at) {
+      return (
+        <ReviewWaiting
+          submissionId={id}
+          media={await signSubmissionMedia(sub.file_paths ?? [])}
+          email={claimEmail ?? realEmail(user.email)}
+          auto={aiReviewMode() === "publish"}
+        />
+      );
+    }
+    if (payment === "pending") {
+      return (
+        <p role="status" className="mx-auto mt-8 w-full max-w-3xl rounded-2xl bg-line/60 px-5 py-4 font-medium">
+          Your payment is processing. We&apos;ll start your review as soon as it clears.
+        </p>
+      );
+    }
+    notFound();
+  }
 
   const [assets, media, priceLabel, followUp, others] = await Promise.all([
     locked ? {} : signAssets(report.user_id, id, referencedAssets(report.markdown, report.audio_path)),
@@ -107,12 +134,12 @@ async function Review({
         {report.published_at ? `Reviewed on ${dateFmt.format(new Date(report.published_at))}` : "Draft preview"}
       </p>
 
-      {payment === "paid" && (
+      {payment === "paid" && sub.unlock_required && (
         <p role="status" className="mt-6 rounded-2xl bg-flame/10 px-5 py-4 font-medium">
           Your full profile review is unlocked! 🔓
         </p>
       )}
-      {payment === "pending" && (
+      {payment === "pending" && sub.unlock_required && (
         <p role="status" className="mt-6 rounded-2xl bg-line/60 px-5 py-4 font-medium">
           Your payment is processing. The review unlocks as soon as it clears.
         </p>

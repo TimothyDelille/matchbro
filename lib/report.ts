@@ -1,6 +1,7 @@
 import "server-only";
 import { BUCKET, supabaseAdmin } from "@/lib/supabase/admin";
 import { SCORE_COLUMNS, profileScore, scoresFromRow, scoresToRow, type Scores } from "@/lib/score";
+import { sendReviewReadyEmail } from "@/lib/email";
 
 /**
  * Report files live inside the submission's folder:
@@ -104,6 +105,10 @@ export async function saveReport(submissionId: string, input: ReportInput) {
         ...(sub.status === "uploading" ? { unlock_required: true } : {}),
       })
       .eq("id", submissionId);
+    // First publish only: tell them it's ready (edits to a published review don't re-send).
+    if (!existing?.published_at) {
+      await sendReviewReadyEmail(submissionId, { score: profileScore(input.scores), locked: sub.status === "uploading" });
+    }
   } else if (sub.status === "queued") {
     await db.from("submissions").update({ status: "reviewing" }).eq("id", submissionId);
   }

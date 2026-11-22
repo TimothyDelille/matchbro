@@ -136,7 +136,7 @@ export async function checkoutForSubmission(
     }
     if (existing.payment_status === "paid") {
       await markSessionPaid(existing);
-      return `${origin}/home?session_id=${existing.id}`;
+      return `${origin}/reviews/${sub.id}?session_id=${existing.id}`;
     }
   }
 
@@ -152,7 +152,8 @@ export async function checkoutForSubmission(
     customer_email: realEmail(profile?.email) ?? undefined,
     metadata,
     payment_intent_data: { metadata },
-    success_url: `${origin}/home?session_id={CHECKOUT_SESSION_ID}`,
+    // Straight to the review page: it shows "analyzing your profile" until the review is published.
+    success_url: `${origin}/reviews/${sub.id}?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/home?checkout=cancelled`,
     expires_at: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
   });
@@ -244,7 +245,7 @@ export type EmailClaim = {
  * Record a paid Checkout Session, queue its submission, and give a guest account
  * the email they typed on Stripe. Idempotent: the webhook and the success page
  * can both call it. Returns null for sessions that aren't paid (yet).
-  then start the AI review (lib/ai-review). Idempotent: the webhook and the success page can both call it.
+ * Also starts the AI review (lib/ai-review).
  */
 export async function markSessionPaid(session: Stripe.Checkout.Session): Promise<EmailClaim | null> {
   const submissionId = session.metadata?.submission_id;
