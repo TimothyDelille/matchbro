@@ -146,7 +146,48 @@ dialog[open] {
     top: 100%;
   }
 }
+/* Score card reaction emojis: pop in one after another, then keep wiggling. */
+.emoji-pop {
+  opacity: 0;
+  animation: emoji-pop 0.6s cubic-bezier(0.3, 1.8, 0.5, 1) forwards;
+}
+@keyframes emoji-pop {
+  from {
+    opacity: 0;
+    transform: scale(0) rotate(-40deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0);
+  }
+}
+.emoji-jiggle {
+  display: inline-block;
+  animation: emoji-jiggle 2.4s ease-in-out infinite;
+}
+@keyframes emoji-jiggle {
+  0%,
+  100% {
+    transform: rotate(var(--tilt, 0deg)) translateY(0);
+  }
+  25% {
+    transform: rotate(calc(var(--tilt, 0deg) + 10deg)) translateY(-3px);
+  }
+  50% {
+    transform: rotate(var(--tilt, 0deg)) translateY(0);
+  }
+  75% {
+    transform: rotate(calc(var(--tilt, 0deg) - 10deg)) translateY(-2px);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
+  .emoji-pop {
+    opacity: 1;
+  }
+  .emoji-pop,
+  .emoji-jiggle {
+    animation: none;
+  }
   .ring-fill,
   .bar-fill,
   .analyze-in,

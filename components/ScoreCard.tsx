@@ -39,52 +39,98 @@ export default function ScoreCard({
   }
 
   return (
-    <section
-      aria-roledescription="carousel"
-      aria-labelledby="score-heading"
-      className="mt-6 overflow-hidden rounded-3xl bg-ink text-paper"
-    >
-      <div
-        ref={track}
-        onScroll={onScroll}
-        tabIndex={slides > 1 ? 0 : undefined}
-        className="flex snap-x snap-mandatory overflow-x-auto rounded-t-3xl overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    <div className="relative mt-6">
+      <section
+        aria-roledescription="carousel"
+        aria-labelledby="score-heading"
+        className="overflow-hidden rounded-3xl bg-ink text-paper"
       >
         <div
-          role="group"
-          aria-roledescription="slide"
-          aria-label={`1 of ${slides}`}
-          className={`w-full flex-none snap-start ${hasPhoto ? "sm:grid sm:grid-cols-2" : ""}`}
+          ref={track}
+          onScroll={onScroll}
+          tabIndex={slides > 1 ? 0 : undefined}
+          className="flex snap-x snap-mandatory overflow-x-auto rounded-t-3xl overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          <ScoreSlide scores={scores} total={total} hero={hasPhoto ? hero : null} hasPhoto={hasPhoto} />
-        </div>
-        {distribution && (
           <div
             role="group"
             aria-roledescription="slide"
-            aria-label={`2 of ${slides}`}
-            className="flex w-full flex-none snap-start flex-col items-center justify-center px-6 py-8 text-center sm:grid sm:grid-cols-2 sm:gap-6 sm:px-8"
+            aria-label={`1 of ${slides}`}
+            className={`w-full flex-none snap-start ${hasPhoto ? "sm:grid sm:grid-cols-2" : ""}`}
           >
-            <CompareSlide total={total} distribution={distribution} hero={hasPhoto ? hero : null} active={slide === 1} />
+            <ScoreSlide scores={scores} total={total} hero={hasPhoto ? hero : null} hasPhoto={hasPhoto} />
+          </div>
+          {distribution && (
+            <div
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`2 of ${slides}`}
+              className="flex w-full flex-none snap-start flex-col items-center justify-center px-6 py-8 text-center sm:grid sm:grid-cols-2 sm:gap-6 sm:px-8"
+            >
+              <CompareSlide total={total} distribution={distribution} hero={hasPhoto ? hero : null} active={slide === 1} />
+            </div>
+          )}
+        </div>
+
+        {slides > 1 && (
+          <div className="flex justify-center gap-2 pb-5 pt-1">
+            {[0, 1].map((i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => goTo(i)}
+                aria-label={i === 0 ? "Show your score" : "Show how you compare"}
+                aria-current={slide === i}
+                className={`h-2 rounded-full transition-all duration-300 ${slide === i ? "w-6 bg-paper" : "w-2 bg-paper/35 hover:bg-paper/60"}`}
+              />
+            ))}
           </div>
         )}
-      </div>
+      </section>
+      <ScoreEmojis total={total} />
+    </div>
+  );
+}
 
-      {slides > 1 && (
-        <div className="flex justify-center gap-2 pb-5 pt-1">
-          {[0, 1].map((i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => goTo(i)}
-              aria-label={i === 0 ? "Show your score" : "Show how you compare"}
-              aria-current={slide === i}
-              className={`h-2 rounded-full transition-all duration-300 ${slide === i ? "w-6 bg-paper" : "w-2 bg-paper/35 hover:bg-paper/60"}`}
-            />
-          ))}
-        </div>
-      )}
-    </section>
+/** Below "Solid" the card gets roasted; from "Solid" up it gets hyped. */
+const ROAST = ["🤡", "👉", "💀", "😬", "🫵", "🥴"];
+const HYPE = ["😎", "🔥", "😏", "🤩", "💯", "😜"];
+
+/** Where each emoji sits on the card's edges, its size, tilt, and when it pops in. */
+const SPOTS = [
+  { pos: "-left-1 -top-4 sm:-left-3", size: "text-4xl", tilt: -14, delay: 0.5 },
+  { pos: "-right-1 -top-5 sm:-right-3", size: "text-5xl", tilt: 12, delay: 0.65 },
+  { pos: "-right-1 top-[46%] sm:-right-4", size: "text-3xl", tilt: 18, delay: 0.8 },
+  { pos: "-bottom-4 -right-1 sm:-right-2", size: "text-4xl", tilt: -8, delay: 0.95 },
+  { pos: "-bottom-5 -left-1 sm:-left-3", size: "text-5xl", tilt: 10, delay: 1.1 },
+  { pos: "-left-1 top-[40%] sm:-left-4", size: "text-3xl", tilt: -18, delay: 1.25 },
+];
+
+/** Reaction emojis on the score card's edges: they pop in on load, then keep wiggling. */
+function ScoreEmojis({ total }: { total: number }) {
+  const set = total >= 65 ? HYPE : ROAST;
+  return (
+    <div aria-hidden className="pointer-events-none absolute inset-0 select-none">
+      {SPOTS.map((s, i) => (
+        <span
+          key={i}
+          className={`emoji-pop absolute ${s.pos} ${s.size} leading-none drop-shadow-[0_4px_6px_rgb(0_0_0/0.25)]`}
+          style={{ animationDelay: `${s.delay}s` }}
+        >
+          <span
+            className="emoji-jiggle"
+            style={
+              {
+                "--tilt": `${s.tilt}deg`,
+                animationDelay: `${i * 0.37}s`,
+                animationDuration: `${2 + (i % 3) * 0.45}s`,
+              } as React.CSSProperties
+            }
+          >
+            {set[i]}
+          </span>
+        </span>
+      ))}
+    </div>
   );
 }
 
