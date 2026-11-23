@@ -14,6 +14,10 @@ import { membership } from "@/lib/billing";
 import PlanStatus from "@/components/PlanStatus";
 import { safeNextPath } from "@/lib/next-path";
 import { offerEndsAt } from "@/lib/plans";
+import ReviewThumb from "@/components/ReviewThumb";
+import ScoreRing from "@/components/ScoreRing";
+import { BUCKET, supabaseAdmin } from "@/lib/supabase/admin";
+import { RUBRICS, SCORE_COLUMNS, profileScore, scoreColor, scoreVerdict, scoresFromRow, type Scores } from "@/lib/score";
 
 // Room for the AI review that can start when a payment is confirmed here (lib/ai-review).
 export const maxDuration = 300;
@@ -77,22 +81,24 @@ export default function Home({ searchParams }: PageProps<"/home">) {
   );
 }
 
-/** Same layout as the list below, shown while the reviews load. */
+/** Same layout as the cards below, shown while the reviews load. */
 function ReviewsSkeleton() {
   return (
     <div aria-busy="true" aria-label="Loading your reviews">
       <h1 className="text-5xl sm:text-6xl font-extrabold tracking-[-0.04em] leading-none">Your reviews</h1>
-      <ul className="mt-12 divide-y divide-line border-y border-line animate-pulse">
-        {["w-28", "w-24", "w-32"].map((w) => (
-          <li key={w} className="flex items-center justify-between gap-4 py-5">
-            <span className={`h-5 ${w} rounded-md bg-line`} />
-            <span className="h-9 w-28 rounded-full bg-line" />
+      <ul className="mt-10 space-y-4 animate-pulse">
+        {[0, 1, 2].map((i) => (
+          <li key={i} className="flex items-center gap-4 rounded-3xl border border-line p-3">
+            <span className="h-28 w-24 rounded-2xl bg-line" />
+            <span className="flex-1 space-y-2.5">
+              <span className="block h-4 w-32 rounded-md bg-line" />
+              <span className="block h-6 w-40 rounded-md bg-line" />
+              <span className="block h-4 w-48 rounded-md bg-line" />
+            </span>
+            <span className="mr-2 hidden size-[4.5rem] rounded-full bg-line sm:block" />
           </li>
         ))}
       </ul>
-      <div className="my-5 flex justify-center">
-        <span className="h-[4.25rem] w-64 animate-pulse rounded-full bg-line" />
-      </div>
     </div>
   );
 }
@@ -136,6 +142,8 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
   const submissions = ((data ?? []) as Submission[]).filter(
     (s) => s.status !== "uploading" || (plans !== null && canStillPay(s, windowMinutes)),
   );
+  const { scoresOf, photosOf } = await cardData(submissions);
+  const deltaOf = scoreDeltas(submissions, scoresOf);
 
   return (
     <>
@@ -174,39 +182,27 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
           Nothing here yet. Send your first recording to get a review.
         </p>
       ) : (
-        <ul className="mt-12 divide-y divide-line border-y border-line">
-          {submissions.map((s) => (
-            <li
+        <ul className="mt-10 space-y-4">
+          {submissions.map((s, i) => (
+            <ReviewCard
               key={s.id}
-              className="flex items-center justify-between gap-4 py-5"
-            >
-              <span className="font-semibold">
-                {dateFmt.format(new Date(s.submitted_at ?? s.created_at))}
-              </span>
-              {s.status === "uploading" ? (
-                <span className="flex items-center gap-3">
-                  <span className="text-muted text-sm">Waiting for payment</span>
-                  {plans && <PayButton submissionId={s.id} plans={plans} offerEndsAt={offerEndsAt(s.created_at)} />}
-                </span>
-              ) : (
-                <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">
-                  {followUpOf.get(s.id) === "answered" && (
-                    <Link href={`/reviews/${s.id}#follow-up`} className="text-sm font-medium text-flame-deep hover:underline">
-                      💬 Tim answered your question
-                    </Link>
-                  )}
-                  {followUpOf.get(s.id) === "asked" && (
-                    <span className="text-sm text-muted">Follow-up sent ⏳</span>
-                  )}
-                  <Status id={s.id} status={s.status} locked={isLocked(s)} />
-                </span>
-              )}
-            </li>
+              sub={s}
+              number={submissions.length - i}
+              scores={scoresOf.get(s.id) ?? null}
+              photos={photosOf.get(s.id) ?? []}
+              delta={deltaOf.get(s.id) ?? null}
+              followUp={followUpOf.get(s.id) ?? null}
+              pay={
+                s.status === "uploading" && plans ? (
+                  <PayButton submissionId={s.id} plans={plans} offerEndsAt={offerEndsAt(s.created_at)} />
+                ) : null
+              }
+            />
           ))}
         </ul>
       )}
 
-      <div className="flex justify-center my-5"><SubmitSheet account={{ email: user.email ?? "", demo: isDemoUser(user) }} /></div>
+      <div className="flex justify-center mt-8 mb-5"><SubmitSheet account={{ email: user.email ?? "", demo: isDemoUser(user) }} /></div>
 
     </>
   );
@@ -230,28 +226,189 @@ function AccountExists({ email, next }: { email: string; next: string }) {
   );
 }
 
-function Status({
-  id,
-  status,
-  locked,
+const IMAGE_FILE = /\.(jpe?g|png|webp|heic|heif|gif)$/i;
+
+/**
+ * Scores of each published review (locked ones too: owners see the score on a
+ * locked review, and RLS hides those rows from them, so this reads them with
+ * the admin client; the ids come from the user's own RLS-filtered submissions)
+ * and up to 3 signed pictures per submission for the card cover.
+ */
+async function cardData(subs: Submission[]) {
+  const scoresOf = new Map<string, Scores>();
+  const photosOf = new Map<string, string[]>();
+  if (!subs.length) return { scoresOf, photosOf };
+  const db = supabaseAdmin();
+  const covers = subs.flatMap((s) => s.file_paths.filter((f) => IMAGE_FILE.test(f)).slice(0, 3).map((path) => ({ id: s.id, path })));
+  const [{ data: reports }, { data: signed }] = await Promise.all([
+    db
+      .from("reports")
+      .select(`submission_id, published_at, ${SCORE_COLUMNS}`)
+      .in("submission_id", subs.map((s) => s.id))
+      .not("published_at", "is", null),
+    covers.length
+      ? db.storage.from(BUCKET).createSignedUrls(covers.map((c) => c.path), 3600)
+      : Promise.resolve({ data: [] as { signedUrl: string | null }[] }),
+  ]);
+  for (const r of reports ?? []) scoresOf.set(r.submission_id, scoresFromRow(r));
+  (signed ?? []).forEach((d, i) => {
+    if (!d.signedUrl) return;
+    const id = covers[i].id;
+    photosOf.set(id, [...(photosOf.get(id) ?? []), d.signedUrl]);
+  });
+  return { scoresOf, photosOf };
+}
+
+/** How much each review's overall score moved since the previous scored review. */
+function scoreDeltas(subs: Submission[], scoresOf: Map<string, Scores>) {
+  const deltas = new Map<string, number>();
+  const scored = subs
+    .map((s) => ({ id: s.id, at: s.submitted_at ?? s.created_at, total: profileScore(scoresOf.get(s.id) ?? EMPTY) }))
+    .filter((s): s is { id: string; at: string; total: number } => s.total !== null)
+    .sort((a, b) => a.at.localeCompare(b.at));
+  scored.forEach((s, i) => {
+    if (i > 0) deltas.set(s.id, s.total - scored[i - 1].total);
+  });
+  return deltas;
+}
+
+const EMPTY: Scores = { pictures: null, prompts: null, conversation: null, settings: null };
+
+function filesLabel(paths: string[]) {
+  const videos = paths.filter((p) => /\.(mp4|mov|webm|m4v)$/i.test(p)).length;
+  const images = paths.length - videos;
+  const parts = [
+    images ? `${images} screenshot${images > 1 ? "s" : ""}` : "",
+    videos ? `${videos} recording${videos > 1 ? "s" : ""}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ");
+}
+
+function ReviewCard({
+  sub,
+  number,
+  scores,
+  photos,
+  delta,
+  followUp,
+  pay,
 }: {
-  id: string;
-  status: Exclude<Submission["status"], "uploading">;
-  locked: boolean;
+  sub: Submission;
+  number: number;
+  scores: Scores | null;
+  photos: string[];
+  delta: number | null;
+  followUp: "asked" | "answered" | null;
+  pay: React.ReactNode;
 }) {
-  if (status === "queued" || status === "reviewing") {
-    return (
-      <Link href={`/reviews/${id}`} className="text-flame-deep font-medium hover:underline">
-        Currently being reviewed ⏳
-      </Link>
-    );
-  }
+  const href = `/reviews/${sub.id}`;
+  const date = dateFmt.format(new Date(sub.submitted_at ?? sub.created_at));
+  const files = filesLabel(sub.file_paths);
+  const total = scores ? profileScore(scores) : null;
+  const locked = isLocked(sub);
+  const waiting = sub.status === "uploading";
+  const inReview = sub.status === "queued" || sub.status === "reviewing" || (sub.status === "done" && total === null);
+
   return (
-    <Link
-      href={`/reviews/${id}`}
-      className="rounded-full bg-ink px-4 py-2 text-sm font-bold text-paper hover:bg-flame"
+    <li
+      className={`group relative flex items-start gap-4 rounded-3xl border bg-paper p-3 pr-4 transition sm:items-center sm:gap-5 sm:pr-6 ${
+        waiting ? "border-dashed border-muted/50" : "border-line hover:-translate-y-0.5 hover:border-ink hover:shadow-[0_14px_30px_-16px_rgb(0_0_0/0.35)]"
+      }`}
     >
-      {locked ? "Reviewed! Unlock 🔒" : "Reviewed! 🔥"}
-    </Link>
+      <div className="relative">
+        <ReviewThumb photos={photos} className={`h-28 w-[5.5rem] rounded-2xl sm:h-32 sm:w-28 ${waiting ? "opacity-60 grayscale" : ""}`} />
+        {total !== null && (
+          // Phones: the score sits on the picture's corner instead of the big ring.
+          <span
+            className={`absolute -bottom-1.5 -right-1.5 rounded-full border-2 border-paper px-2 py-0.5 text-sm font-extrabold tabular-nums sm:hidden ${total >= 50 && total <= 80 ? "text-ink" : "text-paper"}`}
+            style={{ background: scoreColor(total) }}
+          >
+            {total}
+          </span>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          Review #{number} · {date}
+        </p>
+
+        {total !== null ? (
+          <>
+            <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+              <span className="text-xl font-extrabold tracking-tight sm:text-2xl">{scoreVerdict(total)}</span>
+              {locked && (
+                <span className="rounded-full bg-ink px-2 py-0.5 text-xs font-bold text-paper">🔒 Locked</span>
+              )}
+              {delta !== null && delta !== 0 && (
+                <span
+                  className={`rounded-full px-2 py-0.5 text-xs font-bold ${delta > 0 ? "bg-good/12 text-good" : "bg-bad/10 text-bad"}`}
+                  title="Since your previous review"
+                >
+                  {delta > 0 ? "▲" : "▼"} {Math.abs(delta)} pts
+                </span>
+              )}
+            </p>
+            <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-sm">
+              {RUBRICS.map(({ key, label }) =>
+                scores![key] === null ? null : (
+                  <span key={key} className="inline-flex items-center gap-1.5 whitespace-nowrap text-muted">
+                    <span aria-hidden className="size-2 rounded-full" style={{ background: scoreColor(scores![key]!) }} />
+                    {label} <span className="font-bold text-ink tabular-nums">{scores![key]}</span>
+                  </span>
+                ),
+              )}
+            </p>
+          </>
+        ) : waiting ? (
+          <p className="mt-1 text-xl font-extrabold tracking-tight sm:text-2xl">Waiting for payment</p>
+        ) : (
+          <p className="mt-1 flex items-center gap-2 whitespace-nowrap text-xl font-extrabold tracking-tight sm:text-2xl">
+            <span className="relative flex size-2.5 shrink-0">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-flame opacity-70 motion-reduce:animate-none" />
+              <span className="relative inline-flex size-2.5 rounded-full bg-flame" />
+            </span>
+            Being reviewed
+          </p>
+        )}
+
+        <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
+          {files && <span className="text-muted">{files}</span>}
+          {inReview && !waiting && <span className="text-muted">We&apos;ll email you when it&apos;s ready</span>}
+          {followUp === "answered" && (
+            <Link href={`${href}#follow-up`} className="relative z-10 font-semibold text-flame-deep hover:underline">
+              💬 Tim answered your question
+            </Link>
+          )}
+          {followUp === "asked" && <span className="text-muted">Follow-up sent ⏳</span>}
+        </p>
+
+        {waiting && pay && <div className="relative z-10 mt-3">{pay}</div>}
+      </div>
+
+      {!waiting && (
+        <div className="flex shrink-0 items-center sm:gap-4">
+          {total !== null && (
+            <span className="hidden sm:block">
+              <ScoreRing score={total} size={72} animate />
+            </span>
+          )}
+          <Link
+            href={href}
+            // The whole card is the link; the follow-up link above sits on top of it.
+            className="after:absolute after:inset-0 after:rounded-3xl sm:grid sm:size-10 sm:place-items-center sm:rounded-full sm:bg-ink sm:text-paper sm:transition sm:group-hover:bg-flame"
+            aria-label={`Open review #${number} from ${date}${locked ? " (locked)" : ""}`}
+          >
+            {locked ? (
+              <span aria-hidden className="hidden text-sm sm:inline">🔒</span>
+            ) : (
+              <svg className="hidden sm:block" width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden>
+                <path d="M6 3l5 5-5 5" stroke="currentColor" strokeWidth="2.25" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </Link>
+        </div>
+      )}
+    </li>
   );
 }
