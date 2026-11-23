@@ -13,7 +13,7 @@ export default function PayButton({
   submissionId: string;
   plans: Plans;
   /** When the lifetime discount stops for this upload (ISO). */
-  offerEndsAt: string;
+  offerEndsAt: string | null;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
 

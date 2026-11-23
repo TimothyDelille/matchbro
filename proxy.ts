@@ -2,6 +2,14 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { safeNextPath, signInUrl } from "@/lib/next-path";
 import { isGuestEmail } from "@/lib/guest";
+import {
+  OFFER_COOKIE,
+  OFFER_COOKIE_OPTIONS,
+  OFFER_PATHS,
+  makeOfferCookie,
+  offerSessionKey,
+  readOfferCookie,
+} from "@/lib/offer-session";
 
 /** Keeps the Supabase session fresh and guards the signed-in pages. */
 export async function proxy(request: NextRequest) {
@@ -40,6 +48,25 @@ export async function proxy(request: NextRequest) {
   }
 
   if (path === "/") return landingSplit(request, response);
+
+  if (OFFER_PATHS.some((p) => path.startsWith(p))) {
+    const { data } = await supabase.auth.getSession();
+    const session = offerSessionKey(user ? data.session?.access_token : null, isGuestEmail(user?.email));
+    const current = await readOfferCookie(request.cookies.get(OFFER_COOKIE)?.value);
+    // First paywall of this session (or a new sign-in / sign-out since): start a fresh countdown.
+    if (current?.session !== session) {
+      const value = await makeOfferCookie(session, Date.now());
+      request.cookies.set(OFFER_COOKIE, value);
+      const next = NextResponse.next({ request });
+      response.cookies.getAll().forEach((c) => next.cookies.set(c));
+      response.headers.forEach((v, k) => {
+        const key = k.toLowerCase();
+        if (key !== "set-cookie" && !key.startsWith("x-middleware")) next.headers.set(k, v);
+      });
+      next.cookies.set(OFFER_COOKIE, value, OFFER_COOKIE_OPTIONS);
+      return next;
+    }
+  }
 
   return response;
 }

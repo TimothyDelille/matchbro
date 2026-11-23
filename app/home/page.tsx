@@ -14,6 +14,7 @@ import { membership } from "@/lib/billing";
 import PlanStatus from "@/components/PlanStatus";
 import { safeNextPath } from "@/lib/next-path";
 import { offerEndsAt } from "@/lib/plans";
+import { offerStartedAt } from "@/lib/offer";
 import ReviewThumb from "@/components/ReviewThumb";
 import ScoreRing from "@/components/ScoreRing";
 import { BUCKET, supabaseAdmin } from "@/lib/supabase/admin";
@@ -144,6 +145,8 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
   );
   const { scoresOf, photosOf } = await cardData(submissions);
   const deltaOf = scoreDeltas(submissions, scoresOf);
+  const offerStart = await offerStartedAt();
+  const offerEnd = offerStart ? offerEndsAt(offerStart) : null;
 
   return (
     <>
@@ -194,7 +197,7 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
               followUp={followUpOf.get(s.id) ?? null}
               pay={
                 s.status === "uploading" && plans ? (
-                  <PayButton submissionId={s.id} plans={plans} offerEndsAt={offerEndsAt(s.created_at)} />
+                  <PayButton submissionId={s.id} plans={plans} offerEndsAt={offerEnd} />
                 ) : null
               }
             />

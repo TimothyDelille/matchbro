@@ -28,7 +28,7 @@ type View =
   | { kind: "paywall"; submissionId: string; plans: Plans; offerEndsAt: string | null };
 
 /** How the upload ended, read when the loader finishes. */
-type Outcome = { submissionId: string; plans?: Plans; offerEndsAt?: string; memberReviewUrl?: string };
+type Outcome = { submissionId: string; plans?: Plans; offerEndsAt?: string | null; memberReviewUrl?: string };
 
 type Props = {
   /** Set when the visitor is signed in (or a guest from an earlier upload): uses their session. */
@@ -46,8 +46,8 @@ type ApiResult = {
   uploads?: { path: string; token: string }[];
   /** Payments on: the plans to pick from on the paywall. */
   plans?: Plans;
-  /** When the lifetime discount stops (ISO). */
-  offerEndsAt?: string;
+  /** When this session's lifetime discount stops (ISO), or null when it has no countdown. */
+  offerEndsAt?: string | null;
   /** They already have a plan: the upload was queued, this is its review page. */
   memberReviewUrl?: string;
   /** Demo account: the review was published instantly. */

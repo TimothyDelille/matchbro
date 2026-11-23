@@ -89,9 +89,9 @@ const couponOff = (coupon: Stripe.Coupon | null, cents: number) =>
 /** The limited-time lifetime coupon, or null when there's none in Stripe. */
 export const lifetimeOfferCoupon = () => getCoupon(LIFETIME_COUPON_ID);
 
-/** Is the lifetime discount still on for an upload started at `startedAt`? A few seconds of grace for slow clicks. */
-export function offerActive(startedAt: string): boolean {
-  return Date.now() < new Date(offerEndsAt(startedAt)).getTime() + 30_000;
+/** Is the lifetime discount still on for a countdown started at `startedAt` (lib/offer)? A few seconds of grace for slow clicks. */
+export function offerActive(startedAt: string | null): boolean {
+  return !!startedAt && Date.now() < new Date(offerEndsAt(startedAt)).getTime() + 30_000;
 }
 
 const formatAmount = (cents: number, currency: string) =>
@@ -201,6 +201,7 @@ export async function checkoutForSubmission(
   sub: { id: string; user_id: string; status: string; created_at: string },
   plan: PlanId,
   origin: string,
+  offerStartedAt: string | null,
 ): Promise<string> {
   if (sub.status !== "uploading") throw new CheckoutError("This review was already sent or expired.", 409);
 
@@ -210,7 +211,7 @@ export async function checkoutForSubmission(
   }
 
   const db = supabaseAdmin();
-  const offer = offerActive(sub.created_at) ? "1" : "0";
+  const offer = offerActive(offerStartedAt) ? "1" : "0";
 
   const { data: files } = await db.storage.from(BUCKET).list(`${sub.user_id}/${sub.id}`, { limit: 1 });
   if (!files?.length) throw new CheckoutError("We couldn't find your upload. Send it again.", 400);

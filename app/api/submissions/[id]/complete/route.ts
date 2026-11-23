@@ -2,6 +2,7 @@ import { BUCKET, configError, getSetting, supabaseAdmin } from "@/lib/supabase/a
 import { paymentsRequired, planLabels } from "@/lib/stripe";
 import { coverWithMembership, membership } from "@/lib/billing";
 import { offerEndsAt } from "@/lib/plans";
+import { offerStartedAt } from "@/lib/offer";
 import { DEMO_MARKDOWN, DEMO_SCORES, isDemoUser } from "@/lib/demo";
 import { saveReport } from "@/lib/report";
 import { currentUser } from "@/lib/supabase/server";
@@ -100,7 +101,8 @@ export async function POST(req: Request, ctx: RouteContext<"/api/submissions/[id
     }
     const plans = await planLabels();
     if (!plans) return Response.json({ error: "We couldn't load our prices. Try again in a minute." }, { status: 500 });
-    return Response.json({ plans, offerEndsAt: offerEndsAt(sub.created_at) });
+    const started = await offerStartedAt();
+    return Response.json({ plans, offerEndsAt: started ? offerEndsAt(started) : null });
   }
 
   await db
