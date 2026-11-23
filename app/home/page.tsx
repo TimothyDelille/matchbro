@@ -9,8 +9,10 @@ import SignOutForm from "@/components/SignOutForm";
 import { supabaseServer } from "@/lib/supabase/server";
 import { isDemoUser } from "@/lib/demo";
 import { getSetting } from "@/lib/supabase/admin";
-import { checkoutPriceLabel, confirmCheckout, isLocked } from "@/lib/stripe";
+import { checkoutPlans, confirmCheckout, isLocked, membership } from "@/lib/stripe";
+import PlanStatus from "@/components/PlanStatus";
 import { safeNextPath } from "@/lib/next-path";
+import { offerEndsAt } from "@/lib/plans";
 
 // Room for the AI review that can start when a payment is confirmed here (lib/ai-review).
 export const maxDuration = 300;
@@ -109,20 +111,24 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
   const movedNext = safeNextPath(typeof params.next === "string" ? params.next : null) ?? "/home";
   const cancelled = params.checkout === "cancelled";
 
-  const [{ data }, priceLabel, windowMinutes, { data: followUps }] = await Promise.all([
+  const [{ data }, plans, windowMinutes, { data: followUps }, member] = await Promise.all([
     supabase
       .from("submissions")
       .select("id, status, submitted_at, created_at, file_paths, unlock_required, paid_at")
       .in("status", ["uploading", "queued", "reviewing", "done"])
       .order("submitted_at", { ascending: false, nullsFirst: true })
       .order("created_at", { ascending: false }),
-    checkoutPriceLabel(),
+    checkoutPlans(),
     getSetting("upload_window_minutes"),
     supabase.from("follow_ups").select("submission_id, answered_at"),
+    membership(user.id).catch((e) => {
+      console.error("membership", e);
+      return null;
+    }),
   ]);
   const followUpOf = new Map((followUps ?? []).map((f) => [f.submission_id, f.answered_at ? "answered" : "asked"] as const));
   const submissions = ((data ?? []) as Submission[]).filter(
-    (s) => s.status !== "uploading" || (priceLabel !== null && canStillPay(s, windowMinutes)),
+    (s) => s.status !== "uploading" || (plans !== null && canStillPay(s, windowMinutes)),
   );
 
   return (
@@ -155,6 +161,14 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
         </p>
       )}
 
+      {member && (
+        <PlanStatus
+          plan={member.plan}
+          periodEnd={member.plan === "weekly" ? member.periodEnd : null}
+          cancelling={member.plan === "weekly" && member.cancelling}
+        />
+      )}
+
       {submissions.length === 0 ? (
         <p className="mt-12 text-lg text-muted">
           Nothing here yet. Send your first recording to get a review.
@@ -172,7 +186,7 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
               {s.status === "uploading" ? (
                 <span className="flex items-center gap-3">
                   <span className="text-muted text-sm">Waiting for payment</span>
-                  <PayButton submissionId={s.id} priceLabel={priceLabel} />
+                  {plans && <PayButton submissionId={s.id} plans={plans} offerEndsAt={offerEndsAt(s.created_at)} />}
                 </span>
               ) : (
                 <span className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1">

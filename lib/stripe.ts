@@ -4,13 +4,22 @@ import { BUCKET, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
 import { isGuestEmail, realEmail } from "@/lib/guest";
 import { EMAIL_RE } from "@/lib/limits";
 import { scheduleAiReview } from "@/lib/ai-review";
+import { offerEndsAt, type PlanId, type Plans } from "@/lib/plans";
 
 /**
- * Stripe is the single source of truth for what a review costs: a Price with
- * lookup key "roast" (override with STRIPE_PRICE_LOOKUP_KEY). Nothing in the
- * app or database hardcodes an amount. Sandbox vs live = which keys are set.
+ * Stripe is the single source of truth for what the plans cost: a recurring
+ * weekly Price (lookup key "weekly") and a one-time Price (lookup key
+ * "lifetime"), plus an optional coupon (id "first_week") taken off the first
+ * weekly invoice. Nothing in the app or database hardcodes an amount.
+ * Sandbox vs live = which keys are set.
  */
-export const PRICE_LOOKUP_KEY = process.env.STRIPE_PRICE_LOOKUP_KEY ?? "roast";
+const LOOKUP_KEYS: Record<PlanId, string> = {
+  weekly: process.env.STRIPE_WEEKLY_LOOKUP_KEY ?? "weekly",
+  lifetime: process.env.STRIPE_LIFETIME_LOOKUP_KEY ?? "lifetime",
+};
+const INTRO_COUPON_ID = process.env.STRIPE_INTRO_COUPON ?? "first_week";
+/** Optional coupon for the limited-time lifetime discount (e.g. 30% off, once). No coupon = no offer. */
+const LIFETIME_COUPON_ID = process.env.STRIPE_LIFETIME_COUPON ?? "lifetime_offer";
 
 /** Checkout Sessions can't expire sooner than 30 minutes. */
 const SESSION_TTL_SECONDS = 30 * 60;
@@ -52,19 +61,91 @@ async function getPrice(lookupKey: string): Promise<Stripe.Price> {
   return data[0];
 }
 
-export const getRoastPrice = () => getPrice(PRICE_LOOKUP_KEY);
+export const getPlanPrice = (plan: PlanId) => getPrice(LOOKUP_KEYS[plan]);
 
-const formatPrice = (price: Stripe.Price) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: price.currency }).format(price.unit_amount! / 100);
+const couponCache = new Map<string, { coupon: Stripe.Coupon | null; at: number }>();
 
-/** "$9.99", or null if Stripe isn't configured (so pages still render). */
-export async function roastPriceLabel(): Promise<string | null> {
+/** A coupon by id, or null if it doesn't exist (or is no longer valid). */
+async function getCoupon(id: string): Promise<Stripe.Coupon | null> {
+  const cached = couponCache.get(id);
+  if (cached && Date.now() - cached.at < 60_000) return cached.coupon;
+  let coupon: Stripe.Coupon | null = null;
   try {
-    return formatPrice(await getRoastPrice());
+    const c = await stripe().coupons.retrieve(id);
+    coupon = c.valid ? c : null;
   } catch (e) {
-    console.error("price", e);
-    return null;
+    if ((e as { code?: string }).code !== "resource_missing") throw e;
   }
+  couponCache.set(id, { coupon, at: Date.now() });
+  return coupon;
+}
+
+/** How many cents a coupon takes off an amount. */
+const couponOff = (coupon: Stripe.Coupon | null, cents: number) =>
+  coupon ? (coupon.amount_off ?? Math.round((cents * (coupon.percent_off ?? 0)) / 100)) : 0;
+
+/** Is the lifetime discount still on for an upload started at `startedAt`? A few seconds of grace for slow clicks. */
+export function offerActive(startedAt: string): boolean {
+  return Date.now() < new Date(offerEndsAt(startedAt)).getTime() + 30_000;
+}
+
+const formatAmount = (cents: number, currency: string) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency }).format(cents / 100);
+
+/** Shown before the Stripe prices exist (local dev, previews). Never in production. */
+const FALLBACK_PLANS: Plans = { weekly: { price: "$7.99", intro: null }, lifetime: { price: "$69.99", sale: null } };
+
+/** Price labels for the paywall, or null if Stripe isn't configured in production. */
+export async function planLabels(): Promise<Plans | null> {
+  try {
+    const [weekly, lifetime, intro, offer] = await Promise.all([
+      getPlanPrice("weekly"),
+      getPlanPrice("lifetime"),
+      getCoupon(INTRO_COUPON_ID),
+      getCoupon(LIFETIME_COUPON_ID),
+    ]);
+    const weeklyCents = weekly.unit_amount!;
+    const lifetimeCents = lifetime.unit_amount!;
+    const introOff = couponOff(intro, weeklyCents);
+    const offerOff = couponOff(offer, lifetimeCents);
+    return {
+      weekly: {
+        price: formatAmount(weeklyCents, weekly.currency),
+        intro: introOff > 0 ? formatAmount(Math.max(0, weeklyCents - introOff), weekly.currency) : null,
+      },
+      lifetime: {
+        price: formatAmount(lifetimeCents, lifetime.currency),
+        sale:
+          offerOff > 0
+            ? {
+                price: formatAmount(Math.max(0, lifetimeCents - offerOff), lifetime.currency),
+                percentOff: Math.round((offerOff / lifetimeCents) * 100),
+              }
+            : null,
+      },
+    };
+  } catch (e) {
+    console.error("plan prices", e);
+    return process.env.VERCEL_ENV === "production" ? null : FALLBACK_PLANS;
+  }
+}
+
+/**
+ * The Checkout Session fields that depend on the plan: a one-time payment
+ * (with the lifetime coupon while `offer` is on) or a subscription (with the
+ * intro coupon, if there is one).
+ */
+async function planSessionParams(
+  plan: PlanId,
+  metadata: Record<string, string>,
+  offer: boolean,
+): Promise<Pick<Stripe.Checkout.SessionCreateParams, "mode" | "line_items" | "discounts" | "payment_intent_data" | "subscription_data">> {
+  const price = await getPlanPrice(plan);
+  const line_items = [{ price: price.id, quantity: 1 }];
+  const coupon = plan === "lifetime" ? (offer ? await getCoupon(LIFETIME_COUPON_ID) : null) : await getCoupon(INTRO_COUPON_ID);
+  const discounts = coupon ? { discounts: [{ coupon: coupon.id }] } : {};
+  if (plan === "lifetime") return { mode: "payment", line_items, payment_intent_data: { metadata }, ...discounts };
+  return { mode: "subscription", line_items, subscription_data: { metadata }, ...discounts };
 }
 
 /** Minutes left before reserve_submission expires an unfinished upload (and the sweeper deletes its files). */
@@ -113,6 +194,7 @@ export class CheckoutError extends Error {
  */
 export async function checkoutForSubmission(
   sub: { id: string; user_id: string; status: string; created_at: string },
+  plan: PlanId,
   origin: string,
 ): Promise<string> {
   if (sub.status !== "uploading") throw new CheckoutError("This review was already sent or expired.", 409);
@@ -123,6 +205,7 @@ export async function checkoutForSubmission(
   }
 
   const db = supabaseAdmin();
+  const offer = offerActive(sub.created_at) ? "1" : "0";
 
   const { data: files } = await db.storage.from(BUCKET).list(`${sub.user_id}/${sub.id}`, { limit: 1 });
   if (!files?.length) throw new CheckoutError("We couldn't find your upload. Send it again.", 400);
@@ -130,8 +213,8 @@ export async function checkoutForSubmission(
   // Reuse an open session (double clicks, coming back from the Stripe page).
   const [existing] = await pendingSessions(sub.id, 1);
   if (existing) {
-    // Only reuse it if it's still at the current price (prices can change while a session is open).
-    if (existing.status === "open" && existing.url && existing.amount_total === (await getRoastPrice()).unit_amount) {
+    // Only reuse it for the same plan at the same price (they may have picked the other one, or the offer ended).
+    if (existing.status === "open" && existing.url && existing.metadata?.plan === plan && existing.metadata?.offer === offer) {
       return existing.url;
     }
     if (existing.payment_status === "paid") {
@@ -141,17 +224,14 @@ export async function checkoutForSubmission(
   }
 
   const { data: profile } = await db.from("profiles").select("email").eq("id", sub.user_id).maybeSingle();
-  const price = await getRoastPrice();
-  const metadata = { submission_id: sub.id, user_id: sub.user_id };
+  const metadata = { submission_id: sub.id, user_id: sub.user_id, plan, offer };
 
   const session = await stripe().checkout.sessions.create({
-    mode: "payment",
-    line_items: [{ price: price.id, quantity: 1 }],
+    ...(await planSessionParams(plan, metadata, offer === "1")),
     client_reference_id: sub.id,
     // Guests have no email yet: Checkout asks for it (and we keep it after payment).
     customer_email: realEmail(profile?.email) ?? undefined,
     metadata,
-    payment_intent_data: { metadata },
     // Straight to the review page: it shows "analyzing your profile" until the review is published.
     success_url: `${origin}/reviews/${sub.id}?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${origin}/home?checkout=cancelled`,
@@ -180,6 +260,7 @@ export const isLocked = (sub: { unlock_required: boolean; paid_at: string | null
  */
 export async function checkoutForUnlock(
   sub: { id: string; user_id: string; status: string; unlock_required: boolean; paid_at: string | null },
+  plan: PlanId,
   origin: string,
 ): Promise<string> {
   if (sub.status !== "done" || !isLocked(sub)) throw new CheckoutError("This review is already unlocked.", 409);
@@ -198,24 +279,21 @@ export async function checkoutForUnlock(
       existing.metadata?.kind === "unlock" &&
       existing.status === "open" &&
       existing.url &&
-      existing.amount_total === (await getRoastPrice()).unit_amount
+      existing.metadata?.plan === plan
     ) {
       return existing.url;
     }
   }
 
   const { data: profile } = await db.from("profiles").select("email").eq("id", sub.user_id).maybeSingle();
-  const price = await getRoastPrice();
-  const metadata = { submission_id: sub.id, user_id: sub.user_id, kind: "unlock" };
+  const metadata = { submission_id: sub.id, user_id: sub.user_id, kind: "unlock", plan };
 
   const session = await stripe().checkout.sessions.create({
-    mode: "payment",
-    line_items: [{ price: price.id, quantity: 1 }],
+    ...(await planSessionParams(plan, metadata, false)),
     client_reference_id: sub.id,
     // Guests have no email yet: Checkout asks for it (and we keep it after payment).
     customer_email: realEmail(profile?.email) ?? undefined,
     metadata,
-    payment_intent_data: { metadata },
     success_url: `${reviewUrl}?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: reviewUrl,
     expires_at: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
@@ -314,17 +392,104 @@ async function claimPaidEmail(userId: string, submissionId: string, stripeEmail:
   return { email, movedToExistingAccount: false };
 }
 
+/** A plan the account already holds. */
+export type Membership =
+  | { plan: "lifetime" }
+  | { plan: "weekly"; subscriptionId: string; /** When the paid week ends (ISO). */ periodEnd: string | null; cancelling: boolean };
+
+/**
+ * The plan this account already paid for, if it still covers new reviews:
+ * a paid lifetime checkout, or a weekly subscription Stripe still reports as
+ * active. Nothing about plans is stored in our database: it's read from the
+ * account's paid Checkout Sessions, so refunds and cancellations apply at once.
+ */
+export async function membership(userId: string): Promise<Membership | null> {
+  const { data, error } = await supabaseAdmin()
+    .from("payments")
+    .select("stripe_session_id")
+    .eq("user_id", userId)
+    .eq("status", "paid")
+    .eq("livemode", keyIsLive())
+    .like("stripe_session_id", "cs\\_%")
+    .order("paid_at", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+
+  const sessions = await Promise.all(
+    (data ?? []).map((p) =>
+      stripe()
+        .checkout.sessions.retrieve(p.stripe_session_id, { expand: ["subscription"] })
+        .catch((e) => {
+          console.warn("membership: unreadable checkout session", p.stripe_session_id, (e as Error).message);
+          return null;
+        }),
+    ),
+  );
+
+  let weekly: Membership | null = null;
+  for (const session of sessions) {
+    if (!session || session.payment_status !== "paid") continue;
+    if (session.metadata?.plan === "lifetime") return { plan: "lifetime" };
+    const sub = session.subscription;
+    if (!weekly && session.metadata?.plan === "weekly" && sub && typeof sub !== "string" && (sub.status === "active" || sub.status === "trialing")) {
+      const end = sub.items.data[0]?.current_period_end;
+      weekly = {
+        plan: "weekly",
+        subscriptionId: sub.id,
+        periodEnd: end ? new Date(end * 1000).toISOString() : null,
+        cancelling: sub.cancel_at_period_end || sub.cancel_at != null,
+      };
+    }
+  }
+  return weekly;
+}
+
+/**
+ * Record a $0 payment for a submission covered by the account's plan, through
+ * the same database path as a Stripe payment. For a fresh upload this queues
+ * it (and starts the AI review); for a locked review it unlocks it. Idempotent.
+ */
+export async function coverWithMembership(sub: { id: string; user_id: string; status: string }) {
+  const db = supabaseAdmin();
+  const sessionId = `member_${sub.id}`;
+  const livemode = keyIsLive();
+  const { error: payError } = await db
+    .from("payments")
+    .upsert(
+      { submission_id: sub.id, user_id: sub.user_id, stripe_session_id: sessionId, livemode },
+      { onConflict: "stripe_session_id", ignoreDuplicates: true },
+    );
+  if (payError) throw payError;
+  const { error } = await db.rpc("mark_submission_paid", {
+    p_session_id: sessionId,
+    p_payment_intent: null,
+    p_amount: 0,
+    p_currency: "usd",
+    p_livemode: livemode,
+  });
+  if (error) throw error;
+  if (sub.status === "uploading") scheduleAiReview(sub.id);
+}
+
+/** Stop a weekly plan from renewing. They keep access until the paid week ends. */
+export async function cancelWeekly(userId: string): Promise<Membership | null> {
+  const current = await membership(userId);
+  if (current?.plan !== "weekly") return current;
+  await stripe().subscriptions.update(current.subscriptionId, { cancel_at_period_end: true });
+  return { ...current, cancelling: true };
+}
+
 /** Base URL for Stripe redirects: APP_URL if set, else wherever the request came in. */
 export function appOrigin(req: Request): string {
   return (process.env.APP_URL ?? new URL(req.url).origin).replace(/\/+$/, "");
 }
 
-/** Price label to show on the submit button, or null when the payment gate is off. */
-export async function checkoutPriceLabel(): Promise<string | null> {
+/** Plans to show on the paywall, or null when the payment gate is off (or Stripe is unreachable). */
+export async function checkoutPlans(): Promise<Plans | null> {
   try {
-    return (await paymentsRequired()) ? await roastPriceLabel() : null;
+    return (await paymentsRequired()) ? await planLabels() : null;
   } catch (e) {
-    console.error("price label", e);
+    console.error("checkout plans", e);
     return null;
   }
 }

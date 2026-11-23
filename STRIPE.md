@@ -13,13 +13,26 @@ SubmitSheet ─ POST /api/submissions ─ upload files ─ POST /api/submissions
        POST /api/stripe/webhook (same thing, as a backstop)
 ```
 
+## Plans
+
+Two plans, picked on the paywall (`components/PlanPicker.tsx`, copy in `lib/plans.ts`):
+
+| Plan | Stripe | Notes |
+|---|---|---|
+| Lifetime | one-time Price, lookup key `lifetime` | Coupon `lifetime_offer` is applied for the first 15 minutes after an upload starts (`OFFER_MINUTES`); the server re-checks the deadline at checkout. No coupon = no offer. |
+| Weekly | recurring weekly Price, lookup key `weekly` | Optional coupon `first_week` on the first invoice. Cancel from /home (`/api/billing/cancel`, stops renewal at period end). |
+
+Nothing about plans is stored in the database. `membership()` in `lib/stripe.ts` reads the
+account's paid Checkout Sessions from Stripe: a paid `lifetime` session, or a `weekly` session
+whose subscription is still active. Members skip the paywall: `coverWithMembership()` records a
+$0 `member_<submission id>` payment through `mark_submission_paid`, like a Stripe payment.
+
 ## Single source of truth
 
-- **Price**: only in Stripe — the active Price with lookup key `roast` (`lib/stripe.ts`).
-  Checkout, the charge and the "Pay $X" resume button on /home all read it (the submit button stays neutral). To change the price, create a new
-  price on the product and move the `roast` lookup key to it (tick "transfer lookup key").
+- **Prices**: only in Stripe, by lookup key (above). To change one, create a new price on the
+  product and move the lookup key to it (tick "transfer lookup key").
 - **The gate**: `app_settings.payments_required` (0/1). The app reads it to decide whether to
-  send people to Checkout, and a database trigger refuses to queue an unpaid submission when it's 1.
+  show the paywall, and a database trigger refuses to queue an unpaid submission when it's 1.
 
 ## Files
 
@@ -84,7 +97,7 @@ The local secret is **never** used in production. Your host (e.g. Vercel) gets t
 
 ## Going live
 
-1. In Stripe **live mode**, create the same product and a one-time price with lookup key `roast`.
+1. In Stripe **live mode**, create the prices with lookup keys `lifetime` and `weekly` (and the `lifetime_offer` coupon).
 2. Workbench → Webhooks → **Create an event destination**: Your account, **Snapshot** payload,
    events `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
    `checkout.session.expired`, `charge.refunded`; endpoint `https://<your-domain>/api/stripe/webhook`.

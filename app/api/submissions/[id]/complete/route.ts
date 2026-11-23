@@ -1,13 +1,18 @@
 import { BUCKET, configError, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
-import { appOrigin, checkoutForSubmission, CheckoutError, paymentsRequired, roastPriceLabel } from "@/lib/stripe";
+import { coverWithMembership, membership, paymentsRequired, planLabels } from "@/lib/stripe";
+import { offerEndsAt } from "@/lib/plans";
 import { DEMO_MARKDOWN, DEMO_SCORES, isDemoUser } from "@/lib/demo";
 import { saveReport } from "@/lib/report";
 import { currentUser } from "@/lib/supabase/server";
 
+// Room for the AI review that starts when a member's upload is queued here (lib/ai-review).
+export const maxDuration = 300;
+
 /**
- * Step 2: after the browser uploads, verify the files. Then either hand back a
- * Stripe Checkout URL (payments on) or queue it straight away (payments off).
- * The submission only reaches "queued" once Stripe says it's paid.
+ * Step 2: after the browser uploads, verify the files. Then either hand back the
+ * plans for the paywall (payments on; Checkout starts once they pick one, via
+ * /checkout) or queue it straight away (payments off). The submission only
+ * reaches "queued" once Stripe says it's paid.
  */
 export async function POST(req: Request, ctx: RouteContext<"/api/submissions/[id]/complete">) {
   const misconfigured = configError();
@@ -82,15 +87,19 @@ export async function POST(req: Request, ctx: RouteContext<"/api/submissions/[id
 
   if (await paymentsRequired()) {
     await db.from("submissions").update({ total_bytes: totalBytes }).eq("id", sub.id);
+    // Lifetime, or a weekly plan that's still active: no paywall, straight to the queue.
     try {
-      const checkoutUrl = await checkoutForSubmission(sub, appOrigin(req));
-      // The price is shown on the paywall step before they leave for Stripe.
-      return Response.json({ checkoutUrl, priceLabel: await roastPriceLabel() });
+      if (await membership(sub.user_id)) {
+        await coverWithMembership(sub);
+        return Response.json({ memberReviewUrl: `/reviews/${sub.id}` });
+      }
     } catch (e) {
-      if (e instanceof CheckoutError) return Response.json({ error: e.message }, { status: e.status });
-      console.error("checkout", e);
-      return Response.json({ error: "We couldn't start checkout. Try again." }, { status: 500 });
+      // Stripe unreachable: fall through to the paywall rather than lose the upload.
+      console.error("membership check", e);
     }
+    const plans = await planLabels();
+    if (!plans) return Response.json({ error: "We couldn't load our prices. Try again in a minute." }, { status: 500 });
+    return Response.json({ plans, offerEndsAt: offerEndsAt(sub.created_at) });
   }
 
   await db

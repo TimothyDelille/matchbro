@@ -12,6 +12,9 @@ import type { MediaItem } from "@/lib/report";
 import { getDemoMedia, setDemoMedia } from "@/lib/demo-store";
 import DemoAnalyzing, { AnalyzingPanel } from "@/components/DemoAnalyzing";
 import { CTA_BUTTON } from "@/lib/ui";
+import PlanPicker from "@/components/PlanPicker";
+import PaywallProof from "@/components/PaywallProof";
+import { REVIEW_FEATURES, type Plans } from "@/lib/plans";
 
 /** A picked file plus a local preview URL. */
 type Item = { file: File; url: string; kind: MediaItem["kind"] };
@@ -22,10 +25,10 @@ type View =
   | { kind: "upload" }
   /** "Preparing your review" loader; the real upload runs behind it. */
   | { kind: "preparing" }
-  | { kind: "paywall"; checkoutUrl: string; priceLabel: string | null };
+  | { kind: "paywall"; submissionId: string; plans: Plans; offerEndsAt: string | null };
 
 /** How the upload ended, read when the loader finishes. */
-type Outcome = { checkoutUrl?: string; priceLabel?: string | null };
+type Outcome = { submissionId: string; plans?: Plans; offerEndsAt?: string; memberReviewUrl?: string };
 
 type Props = {
   /** Set when the visitor is signed in (or a guest from an earlier upload): uses their session. */
@@ -41,8 +44,12 @@ type ApiResult = {
   signIn?: boolean;
   submissionId?: string;
   uploads?: { path: string; token: string }[];
-  checkoutUrl?: string;
-  priceLabel?: string | null;
+  /** Payments on: the plans to pick from on the paywall. */
+  plans?: Plans;
+  /** When the lifetime discount stops (ISO). */
+  offerEndsAt?: string;
+  /** They already have a plan: the upload was queued, this is its review page. */
+  memberReviewUrl?: string;
   /** Demo account: the review was published instantly. */
   reviewUrl?: string;
 };
@@ -70,7 +77,6 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
   const [needsSignIn, setNeedsSignIn] = useState(false);
   const [dragging, setDragging] = useState(false);
   const [starting, setStarting] = useState(false);
-  const [redirecting, setRedirecting] = useState(false);
   /** Demo mode only: upload progress on the button, then the full-screen analyzing screen. */
   const [demoProgress, setDemoProgress] = useState<number | null>(null);
   const [demoReview, setDemoReview] = useState<string | null>(null);
@@ -79,7 +85,7 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
   const demo = Boolean(account?.demo);
   /** Guests (uploaded before, never paid) have no email to show. */
   const signedInAs = realEmail(account?.email);
-  const busy = starting || redirecting || view.kind === "preparing";
+  const busy = starting || view.kind === "preparing";
 
   useEffect(() => {
     if (demo) return;
@@ -224,9 +230,14 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
         setDemoReview(result.reviewUrl);
         return;
       }
-      track("submission_uploaded", { submission_id: start.submissionId, needs_payment: Boolean(result.checkoutUrl) });
+      track("submission_uploaded", { submission_id: start.submissionId, needs_payment: Boolean(result.plans) });
       // The loader reads this when its bar fills (see prepared()).
-      setOutcome({ checkoutUrl: result.checkoutUrl, priceLabel: result.priceLabel });
+      setOutcome({
+        submissionId: start.submissionId!,
+        plans: result.plans,
+        offerEndsAt: result.offerEndsAt,
+        memberReviewUrl: result.memberReviewUrl,
+      });
     } catch (err) {
       track("submission_failed", { error: err instanceof Error ? err.message : String(err) });
       setView({ kind: "upload" });
@@ -239,20 +250,14 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
 
   /** The loader finished and the upload is in: show the paywall, or go home when it's free. */
   function prepared() {
-    if (outcome?.checkoutUrl) {
-      track("paywall_viewed", { price: outcome.priceLabel });
-      setView({ kind: "paywall", checkoutUrl: outcome.checkoutUrl, priceLabel: outcome.priceLabel ?? null });
+    if (outcome?.plans) {
+      track("paywall_viewed", { weekly: outcome.plans.weekly.price, lifetime: outcome.plans.lifetime.price });
+      setView({ kind: "paywall", submissionId: outcome.submissionId, plans: outcome.plans, offerEndsAt: outcome.offerEndsAt ?? null });
       return;
     }
     dialog.current?.close();
-    router.push("/home");
+    router.push(outcome?.memberReviewUrl ?? "/home");
     router.refresh();
-  }
-
-  function checkout(url: string) {
-    track("paywall_checkout_clicked");
-    setRedirecting(true);
-    window.location.assign(url);
   }
 
   function close() {
@@ -510,28 +515,31 @@ export default function SubmitSheet({ account, label = "Review My Profile", onbo
               <h2 className="mt-6 text-[2rem] font-extrabold leading-[1.02] tracking-tight text-balance sm:text-4xl">
                 Unlock your Hinge score 🔥
               </h2>
-              <p className="mt-3 text-muted text-pretty">
-                {problem
-                  ? `Your review is built around the fact that ${problem.recap}${focus ? `, with a deeper look at ${focus.recap}` : ""}.`
-                  : "A real review of your profile, written for you."}
-              </p>
+              <ul className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5">
+                {REVIEW_FEATURES.map((f) => (
+                  <li key={f} className="flex items-center gap-1.5 text-sm font-semibold">
+                    <span className="grid size-5 place-items-center rounded-full bg-flame text-paper">
+                      <Check size={12} />
+                    </span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
 
+              <PaywallProof />
               <LockedPreview items={items} promptsFirst={focus?.value === "prompts"} />
               <p className="mt-3 pb-2 text-sm text-muted">
                 Plus a free follow-up question. We&apos;ll email you as soon as your review is ready.
               </p>
 
               {/* Stays in view while the preview scrolls behind it. */}
-              <div className="sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 bg-linear-to-t from-paper from-80% to-paper/0 px-6 pt-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:-mx-8 sm:-mb-8 sm:px-8 sm:pb-8">
-                <button
-                  type="button"
-                  onClick={() => checkout(view.checkoutUrl)}
-                  disabled={redirecting}
-                  className="w-full rounded-full bg-flame py-5 text-xl font-bold text-paper shadow-[0_10px_0_-2px_var(--flame-deep)] transition active:translate-y-1 active:shadow-[0_6px_0_-2px_var(--flame-deep)] hover:bg-flame-deep disabled:opacity-80"
-                >
-                  {redirecting ? "One sec…" : `Unlock my score${view.priceLabel ? ` · ${view.priceLabel}` : ""}`}
-                </button>
-                <p className="mt-5 text-center text-xs text-muted">One-time payment. Secure checkout by Stripe.</p>
+              <div className="sticky bottom-0 z-10 -mx-6 mt-auto -mb-6 bg-linear-to-t from-paper from-[calc(100%-2rem)] to-paper/0 px-6 pt-8 pb-[max(1.5rem,env(safe-area-inset-bottom))] sm:-mx-8 sm:-mb-8 sm:px-8 sm:pb-8">
+                <PlanPicker
+                  plans={view.plans}
+                  offerEndsAt={view.offerEndsAt}
+                  endpoint={`/api/submissions/${view.submissionId}/checkout`}
+                  onCheckout={(plan) => track("paywall_checkout_clicked", { plan })}
+                />
               </div>
             </div>
           )}

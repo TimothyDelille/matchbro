@@ -1,14 +1,15 @@
-import UnlockButton from "@/components/UnlockButton";
+import PlanPicker from "@/components/PlanPicker";
+import type { Plans } from "@/lib/plans";
 import { LOCKED_PREVIEW } from "@/lib/locked-preview";
 
 export default function LockedReport({
   submissionId,
-  priceLabel,
+  plans,
   preview = false,
 }: {
   submissionId: string;
-  /** "$2.99", or null if Stripe isn't reachable (the button then leaves the price out). */
-  priceLabel: string | null;
+  /** Null if Stripe isn't reachable: the card then asks them to come back. */
+  plans: Plans | null;
   /** An admin previewing the user's locked view. */
   preview?: boolean;
 }) {
@@ -37,7 +38,7 @@ export default function LockedReport({
         section the sticky scroll container and break the centring.
       */}
       <div className="absolute inset-0 px-2">
-        <div className="sticky top-[max(1rem,calc(50svh-8rem))] flex justify-center">
+        <div className="sticky top-[max(1rem,calc(50svh-14rem))] flex justify-center">
           <div className="w-full max-w-md rounded-3xl border border-line bg-paper p-6 sm:p-7 text-center shadow-2xl shadow-ink/10">
             <h2 id="unlock-heading" className="text-2xl font-extrabold tracking-tight">
               Your full review is ready 🔥
@@ -45,9 +46,12 @@ export default function LockedReport({
             <p className="mt-2 text-muted">+ a free follow-up if you have a question.</p>
 
             <div className="mt-5">
-              <UnlockButton submissionId={submissionId} priceLabel={priceLabel} preview={preview} />
+              {plans ? (
+                <PlanPicker plans={plans} endpoint={`/api/submissions/${submissionId}/unlock`} preview={preview} />
+              ) : (
+                <p className="text-sm text-muted">Checkout is unavailable right now. Try again in a minute.</p>
+              )}
             </div>
-            <p className="mt-3 text-xs text-muted">One-time payment. Yours to keep.</p>
           </div>
         </div>
       </div>

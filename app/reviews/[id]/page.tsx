@@ -11,7 +11,7 @@ import ScoreCard from "@/components/ScoreCard";
 import { isAdmin } from "@/lib/admin-auth";
 import { otherProfileScores, referencedAssets, signAssets, signSubmissionMedia } from "@/lib/report";
 import { SCORE_COLUMNS, profileScore, scoreDistribution, scoresFromRow } from "@/lib/score";
-import { confirmCheckout, isLocked, roastPriceLabel } from "@/lib/stripe";
+import { confirmCheckout, coverWithMembership, isLocked, membership, planLabels } from "@/lib/stripe";
 import { FOLLOW_UP_COLUMNS, type FollowUp } from "@/lib/follow-up";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { supabaseServer } from "@/lib/supabase/server";
@@ -72,10 +72,22 @@ async function Review({
   // Owners read their own submission through RLS; admins can see any.
   const { data: sub } = await (admin ? supabaseAdmin() : supabase)
     .from("submissions")
-    .select("file_paths, unlock_required, paid_at, status")
+    .select("user_id, file_paths, unlock_required, paid_at, status")
     .eq("id", id)
     .maybeSingle();
   if (!sub) notFound();
+
+  // A locked review whose owner now has a plan (lifetime, or an active weekly): it's included, unlock it.
+  if (isLocked(sub) && sub.status === "done" && sub.user_id === user.id) {
+    try {
+      if (await membership(user.id)) {
+        await coverWithMembership({ id, user_id: user.id, status: sub.status });
+        sub.paid_at = new Date().toISOString();
+      }
+    } catch (e) {
+      console.error("membership unlock", e);
+    }
+  }
 
   // A locked review: the owner sees the score, the text stays on the server.
   // RLS hides locked reports from owners, so the scores are read with the admin
@@ -109,10 +121,10 @@ async function Review({
     notFound();
   }
 
-  const [assets, media, priceLabel, followUp, others] = await Promise.all([
+  const [assets, media, plans, followUp, others] = await Promise.all([
     locked ? {} : signAssets(report.user_id, id, referencedAssets(report.markdown, report.audio_path)),
     signSubmissionMedia(sub.file_paths ?? []),
-    locked ? roastPriceLabel() : null,
+    locked ? planLabels() : null,
     locked
       ? null
       : (admin ? supabaseAdmin() : supabase)
@@ -163,7 +175,7 @@ async function Review({
       {/* Locked: skip the uploads strip so the paywall sits right under the score. */}
       {!locked && <MediaCarousel items={media} />}
 
-      {locked && <LockedReport submissionId={id} priceLabel={priceLabel} preview={report.user_id !== user.id} />}
+      {locked && <LockedReport submissionId={id} plans={plans} preview={report.user_id !== user.id} />}
 
       {audio && (
         <div className="mt-10 rounded-3xl bg-ink p-5 sm:p-6 text-paper">
