@@ -39,73 +39,73 @@ export default function ScoreCard({
   }
 
   return (
-    <div className="relative mt-6">
-      <section
-        aria-roledescription="carousel"
-        aria-labelledby="score-heading"
-        className="overflow-hidden rounded-3xl bg-ink text-paper"
+    <section
+      aria-roledescription="carousel"
+      aria-labelledby="score-heading"
+      className="mt-6 overflow-hidden rounded-3xl bg-ink text-paper"
+    >
+      <div
+        ref={track}
+        onScroll={onScroll}
+        tabIndex={slides > 1 ? 0 : undefined}
+        className="flex snap-x snap-mandatory overflow-x-auto rounded-t-3xl overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
       >
         <div
-          ref={track}
-          onScroll={onScroll}
-          tabIndex={slides > 1 ? 0 : undefined}
-          className="flex snap-x snap-mandatory overflow-x-auto rounded-t-3xl overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="group"
+          aria-roledescription="slide"
+          aria-label={`1 of ${slides}`}
+          className={`w-full flex-none snap-start ${hasPhoto ? "sm:grid sm:grid-cols-2" : ""}`}
         >
+          <ScoreSlide scores={scores} total={total} hero={hasPhoto ? hero : null} hasPhoto={hasPhoto} />
+        </div>
+        {distribution && (
           <div
             role="group"
             aria-roledescription="slide"
-            aria-label={`1 of ${slides}`}
-            className={`w-full flex-none snap-start ${hasPhoto ? "sm:grid sm:grid-cols-2" : ""}`}
+            aria-label={`2 of ${slides}`}
+            className="flex w-full flex-none snap-start flex-col items-center justify-center px-6 py-8 text-center sm:grid sm:grid-cols-2 sm:gap-6 sm:px-8"
           >
-            <ScoreSlide scores={scores} total={total} hero={hasPhoto ? hero : null} hasPhoto={hasPhoto} />
-          </div>
-          {distribution && (
-            <div
-              role="group"
-              aria-roledescription="slide"
-              aria-label={`2 of ${slides}`}
-              className="flex w-full flex-none snap-start flex-col items-center justify-center px-6 py-8 text-center sm:grid sm:grid-cols-2 sm:gap-6 sm:px-8"
-            >
-              <CompareSlide total={total} distribution={distribution} hero={hasPhoto ? hero : null} active={slide === 1} />
-            </div>
-          )}
-        </div>
-
-        {slides > 1 && (
-          <div className="flex justify-center gap-2 pb-5 pt-1">
-            {[0, 1].map((i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => goTo(i)}
-                aria-label={i === 0 ? "Show your score" : "Show how you compare"}
-                aria-current={slide === i}
-                className={`h-2 rounded-full transition-all duration-300 ${slide === i ? "w-6 bg-paper" : "w-2 bg-paper/35 hover:bg-paper/60"}`}
-              />
-            ))}
+            <CompareSlide total={total} distribution={distribution} hero={hasPhoto ? hero : null} active={slide === 1} />
           </div>
         )}
-      </section>
-      <ScoreEmojis total={total} />
-    </div>
+      </div>
+
+      {slides > 1 && (
+        <div className="flex justify-center gap-2 pb-5 pt-1">
+          {[0, 1].map((i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => goTo(i)}
+              aria-label={i === 0 ? "Show your score" : "Show how you compare"}
+              aria-current={slide === i}
+              className={`h-2 rounded-full transition-all duration-300 ${slide === i ? "w-6 bg-paper" : "w-2 bg-paper/35 hover:bg-paper/60"}`}
+            />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
-/** Below "Solid" the card gets roasted; from "Solid" up it gets hyped. */
+/** Below "Solid" the picture gets roasted; from "Solid" up it gets hyped. */
 const ROAST = ["🤡", "👉", "💀", "😬", "🫵", "🥴"];
 const HYPE = ["😎", "🔥", "😏", "🤩", "💯", "😜"];
 
-/** Where each emoji sits on the card's edges, its size, tilt, and when it pops in. */
-const SPOTS = [
-  { pos: "-left-1 -top-4 sm:-left-3", size: "text-4xl", tilt: -14, delay: 0.5 },
-  { pos: "-right-1 -top-5 sm:-right-3", size: "text-5xl", tilt: 12, delay: 0.65 },
-  { pos: "-right-1 top-[46%] sm:-right-4", size: "text-3xl", tilt: 18, delay: 0.8 },
-  { pos: "-bottom-4 -right-1 sm:-right-2", size: "text-4xl", tilt: -8, delay: 0.95 },
-  { pos: "-bottom-5 -left-1 sm:-left-3", size: "text-5xl", tilt: 10, delay: 1.1 },
-  { pos: "-left-1 top-[40%] sm:-left-4", size: "text-3xl", tilt: -18, delay: 1.25 },
+/**
+ * Scattered around the edges of the picture, clear of the face and of the score at the bottom.
+ * Sizes, angles, timings and wiggles are deliberately uneven so it doesn't look like a grid.
+ */
+const SPOTS: { at: React.CSSProperties; size: number; tilt: number; delay: number; dur: number; amp: number }[] = [
+  { at: { left: "4%", top: "3%" }, size: 46, tilt: -17, delay: 0.45, dur: 1.8, amp: 12 },
+  { at: { right: "7%", top: "9%" }, size: 32, tilt: 24, delay: 0.95, dur: 2.7, amp: 7 },
+  { at: { left: "3%", top: "30%" }, size: 27, tilt: 8, delay: 0.7, dur: 3.3, amp: 15 },
+  { at: { right: "2%", top: "35%" }, size: 50, tilt: -12, delay: 1.35, dur: 2.1, amp: 6 },
+  { at: { left: "25%", top: "11%" }, size: 22, tilt: 31, delay: 1.15, dur: 2.9, amp: 18 },
+  { at: { left: "9%", top: "51%" }, size: 34, tilt: -26, delay: 0.6, dur: 2.4, amp: 9 },
 ];
 
-/** Reaction emojis on the score card's edges: they pop in on load, then keep wiggling. */
+/** Reaction emojis scattered over the picture: they pop in on load, then keep wiggling. */
 function ScoreEmojis({ total }: { total: number }) {
   const set = total >= 65 ? HYPE : ROAST;
   return (
@@ -113,16 +113,17 @@ function ScoreEmojis({ total }: { total: number }) {
       {SPOTS.map((s, i) => (
         <span
           key={i}
-          className={`emoji-pop absolute ${s.pos} ${s.size} leading-none drop-shadow-[0_4px_6px_rgb(0_0_0/0.25)]`}
-          style={{ animationDelay: `${s.delay}s` }}
+          className="emoji-pop absolute leading-none drop-shadow-[0_4px_6px_rgb(0_0_0/0.35)]"
+          style={{ ...s.at, fontSize: s.size, animationDelay: `${s.delay}s` }}
         >
           <span
             className="emoji-jiggle"
             style={
               {
                 "--tilt": `${s.tilt}deg`,
-                animationDelay: `${i * 0.37}s`,
-                animationDuration: `${2 + (i % 3) * 0.45}s`,
+                "--amp": `${s.amp}deg`,
+                animationDelay: `${s.delay + 0.6}s`,
+                animationDuration: `${s.dur}s`,
               } as React.CSSProperties
             }
           >
@@ -165,6 +166,7 @@ function ScoreSlide({
           <>
             <HeroImage hero={hero} className="absolute inset-0" />
             <div aria-hidden className="absolute inset-0 bg-linear-to-b from-ink/0 from-35% to-ink" />
+            <ScoreEmojis total={total} />
           </>
         )}
         <div

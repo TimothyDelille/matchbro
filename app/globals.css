@@ -171,13 +171,13 @@ dialog[open] {
     transform: rotate(var(--tilt, 0deg)) translateY(0);
   }
   25% {
-    transform: rotate(calc(var(--tilt, 0deg) + 10deg)) translateY(-3px);
+    transform: rotate(calc(var(--tilt, 0deg) + var(--amp, 10deg))) translateY(-3px) scale(1.06);
   }
   50% {
     transform: rotate(var(--tilt, 0deg)) translateY(0);
   }
   75% {
-    transform: rotate(calc(var(--tilt, 0deg) - 10deg)) translateY(-2px);
+    transform: rotate(calc(var(--tilt, 0deg) - var(--amp, 10deg) * 0.7)) translateY(-1px) scale(0.97);
   }
 }
 @media (prefers-reduced-motion: reduce) {
