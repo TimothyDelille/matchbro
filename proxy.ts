@@ -29,7 +29,7 @@ export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
   // Signed out: sign in, then come back to the page they asked for (e.g. a review link).
-  if (!user && ["/home", "/reviews", "/roasts", "/admin"].some((p) => path.startsWith(p))) {
+  if (!user && ["/home", "/billing", "/reviews", "/roasts", "/admin"].some((p) => path.startsWith(p))) {
     return NextResponse.redirect(new URL(signInUrl(path + request.nextUrl.search), request.url));
   }
   // Already signed in: skip the form and go straight there. Guests (uploaded,

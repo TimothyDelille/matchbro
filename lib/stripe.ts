@@ -86,6 +86,9 @@ async function getCoupon(id: string): Promise<Stripe.Coupon | null> {
 const couponOff = (coupon: Stripe.Coupon | null, cents: number) =>
   coupon ? (coupon.amount_off ?? Math.round((cents * (coupon.percent_off ?? 0)) / 100)) : 0;
 
+/** The limited-time lifetime coupon, or null when there's none in Stripe. */
+export const lifetimeOfferCoupon = () => getCoupon(LIFETIME_COUPON_ID);
+
 /** Is the lifetime discount still on for an upload started at `startedAt`? A few seconds of grace for slow clicks. */
 export function offerActive(startedAt: string): boolean {
   return Date.now() < new Date(offerEndsAt(startedAt)).getTime() + 30_000;
@@ -157,7 +160,7 @@ export async function uploadMinutesLeft(createdAt: string): Promise<number> {
 }
 
 /** Is STRIPE_SECRET_KEY a live key? Sessions from the other mode can't be read with it. */
-const keyIsLive = () => /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "");
+export const keyIsLive = () => /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY ?? "");
 
 /**
  * This submission's pending Checkout Sessions, newest first, as Stripe sees them now.
@@ -392,93 +395,6 @@ async function claimPaidEmail(userId: string, submissionId: string, stripeEmail:
     if (error) throw error;
   }
   return { email, movedToExistingAccount: false };
-}
-
-/** A plan the account already holds. */
-export type Membership =
-  | { plan: "lifetime" }
-  | { plan: "weekly"; subscriptionId: string; /** When the paid week ends (ISO). */ periodEnd: string | null; cancelling: boolean };
-
-/**
- * The plan this account already paid for, if it still covers new reviews:
- * a paid lifetime checkout, or a weekly subscription Stripe still reports as
- * active. Nothing about plans is stored in our database: it's read from the
- * account's paid Checkout Sessions, so refunds and cancellations apply at once.
- */
-export async function membership(userId: string): Promise<Membership | null> {
-  const { data, error } = await supabaseAdmin()
-    .from("payments")
-    .select("stripe_session_id")
-    .eq("user_id", userId)
-    .eq("status", "paid")
-    .eq("livemode", keyIsLive())
-    .like("stripe_session_id", "cs\\_%")
-    .order("paid_at", { ascending: false })
-    .limit(20);
-  if (error) throw error;
-
-  const sessions = await Promise.all(
-    (data ?? []).map((p) =>
-      stripe()
-        .checkout.sessions.retrieve(p.stripe_session_id, { expand: ["subscription"] })
-        .catch((e) => {
-          console.warn("membership: unreadable checkout session", p.stripe_session_id, (e as Error).message);
-          return null;
-        }),
-    ),
-  );
-
-  let weekly: Membership | null = null;
-  for (const session of sessions) {
-    if (!session || session.payment_status !== "paid") continue;
-    if (session.metadata?.plan === "lifetime") return { plan: "lifetime" };
-    const sub = session.subscription;
-    if (!weekly && session.metadata?.plan === "weekly" && sub && typeof sub !== "string" && (sub.status === "active" || sub.status === "trialing")) {
-      const end = sub.items.data[0]?.current_period_end;
-      weekly = {
-        plan: "weekly",
-        subscriptionId: sub.id,
-        periodEnd: end ? new Date(end * 1000).toISOString() : null,
-        cancelling: sub.cancel_at_period_end || sub.cancel_at != null,
-      };
-    }
-  }
-  return weekly;
-}
-
-/**
- * Record a $0 payment for a submission covered by the account's plan, through
- * the same database path as a Stripe payment. For a fresh upload this queues
- * it (and starts the AI review); for a locked review it unlocks it. Idempotent.
- */
-export async function coverWithMembership(sub: { id: string; user_id: string; status: string }) {
-  const db = supabaseAdmin();
-  const sessionId = `member_${sub.id}`;
-  const livemode = keyIsLive();
-  const { error: payError } = await db
-    .from("payments")
-    .upsert(
-      { submission_id: sub.id, user_id: sub.user_id, stripe_session_id: sessionId, livemode },
-      { onConflict: "stripe_session_id", ignoreDuplicates: true },
-    );
-  if (payError) throw payError;
-  const { error } = await db.rpc("mark_submission_paid", {
-    p_session_id: sessionId,
-    p_payment_intent: null,
-    p_amount: 0,
-    p_currency: "usd",
-    p_livemode: livemode,
-  });
-  if (error) throw error;
-  if (sub.status === "uploading") scheduleAiReview(sub.id);
-}
-
-/** Stop a weekly plan from renewing. They keep access until the paid week ends. */
-export async function cancelWeekly(userId: string): Promise<Membership | null> {
-  const current = await membership(userId);
-  if (current?.plan !== "weekly") return current;
-  await stripe().subscriptions.update(current.subscriptionId, { cancel_at_period_end: true });
-  return { ...current, cancelling: true };
 }
 
 /** Base URL for Stripe redirects: APP_URL if set, else wherever the request came in. */

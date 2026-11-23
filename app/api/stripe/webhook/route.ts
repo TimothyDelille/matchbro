@@ -1,6 +1,7 @@
 import type Stripe from "stripe";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import { markSessionPaid, stripe } from "@/lib/stripe";
+import { finishUpgrade } from "@/lib/billing";
 
 // Room for the AI review that starts after a payment (lib/ai-review).
 export const maxDuration = 300;
@@ -34,7 +35,9 @@ export async function POST(req: Request) {
       case "checkout.session.async_payment_succeeded":
         // Delayed payment methods complete unpaid; markSessionPaid ignores those
         // until async_payment_succeeded arrives.
-        await markSessionPaid(event.data.object);
+        // A weekly member buying lifetime (no submission): end the weekly plan.
+        if (event.data.object.metadata?.kind === "upgrade") await finishUpgrade(event.data.object);
+        else await markSessionPaid(event.data.object);
         break;
 
       case "checkout.session.expired": {

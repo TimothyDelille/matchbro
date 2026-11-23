@@ -38,3 +38,10 @@ export const DEFAULT_PLAN: PlanId = "lifetime";
 export function parsePlan(value: unknown): PlanId | null {
   return PLAN_IDS.includes(value as PlanId) ? (value as PlanId) : null;
 }
+
+/** A cancellation or refund reason needs at least this many words. */
+export const MIN_REASON_WORDS = 3;
+export const MAX_REASON_CHARS = 1000;
+
+export const reasonWords = (reason: string) => reason.trim().split(/\s+/).filter(Boolean).length;
+export const reasonOk = (reason: string) => reasonWords(reason) >= MIN_REASON_WORDS && reason.trim().length <= MAX_REASON_CHARS;

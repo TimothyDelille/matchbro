@@ -16,7 +16,7 @@ function siteUrl(): string {
   return process.env.NODE_ENV === "development" ? "http://localhost:3000" : "https://matchbro.app";
 }
 
-type Email = { to: string; subject: string; html: string; text: string; idempotencyKey: string };
+type Email = { to: string; subject: string; html: string; text: string; idempotencyKey: string; replyTo?: string };
 
 async function send(email: Email): Promise<void> {
   const key = process.env.RESEND_API_KEY;
@@ -32,7 +32,14 @@ async function send(email: Email): Promise<void> {
       // Resend drops a repeat with the same key (24h), so a double publish can't send twice.
       "Idempotency-Key": email.idempotencyKey,
     },
-    body: JSON.stringify({ from: "matchbro <support@matchbro.app>", to: [email.to], subject: email.subject, html: email.html, text: email.text }),
+    body: JSON.stringify({
+      from: "matchbro <support@matchbro.app>",
+      to: [email.to],
+      subject: email.subject,
+      html: email.html,
+      text: email.text,
+      ...(email.replyTo ? { reply_to: email.replyTo } : {}),
+    }),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${await res.text()}`);
 }
@@ -97,5 +104,25 @@ export async function sendReviewReadyEmail(submissionId: string, opts: { score: 
     console.info(`email "review ready" sent for ${submissionId}`);
   } catch (e) {
     console.error("review ready email", submissionId, e);
+  }
+}
+
+/**
+ * A note to the team at support@matchbro.app (a cancellation, a refund request).
+ * Replies go straight to the customer. Never throws: the action it reports already happened.
+ */
+export async function sendSupportNote(note: { subject: string; lines: string[]; replyTo: string | null; idempotencyKey: string }) {
+  try {
+    const text = note.lines.join("\n");
+    await send({
+      to: "support@matchbro.app",
+      subject: note.subject,
+      text,
+      html: `<pre style="font:14px/1.5 -apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;white-space:pre-wrap">${escape(text)}</pre>`,
+      idempotencyKey: note.idempotencyKey,
+      replyTo: note.replyTo ?? undefined,
+    });
+  } catch (e) {
+    console.error("support note", note.subject, e);
   }
 }

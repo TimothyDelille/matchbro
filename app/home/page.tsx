@@ -9,7 +9,8 @@ import SignOutForm from "@/components/SignOutForm";
 import { supabaseServer } from "@/lib/supabase/server";
 import { isDemoUser } from "@/lib/demo";
 import { getSetting } from "@/lib/supabase/admin";
-import { checkoutPlans, confirmCheckout, isLocked, membership } from "@/lib/stripe";
+import { checkoutPlans, confirmCheckout, isLocked } from "@/lib/stripe";
+import { membership } from "@/lib/billing";
 import PlanStatus from "@/components/PlanStatus";
 import { safeNextPath } from "@/lib/next-path";
 import { offerEndsAt } from "@/lib/plans";
@@ -48,11 +49,16 @@ export default function Home({ searchParams }: PageProps<"/home">) {
         <Link href="/" className="text-lg font-extrabold tracking-tight">
           matchbro.app 🔥
         </Link>
-        <SignOutForm>
-          <button className="text-sm text-muted hover:text-ink">
-            Sign out
-          </button>
-        </SignOutForm>
+        <nav className="flex items-center gap-5">
+          <Link href="/billing" className="text-sm text-muted hover:text-ink">
+            Billing
+          </Link>
+          <SignOutForm>
+            <button className="text-sm text-muted hover:text-ink">
+              Sign out
+            </button>
+          </SignOutForm>
+        </nav>
       </header>
 
       <section className="mx-auto w-full max-w-3xl px-5 sm:px-8 py-14">
@@ -161,13 +167,7 @@ async function Reviews({ searchParams }: { searchParams: PageProps<"/home">["sea
         </p>
       )}
 
-      {member && (
-        <PlanStatus
-          plan={member.plan}
-          periodEnd={member.plan === "weekly" ? member.periodEnd : null}
-          cancelling={member.plan === "weekly" && member.cancelling}
-        />
-      )}
+      {member && <PlanStatus membership={member} />}
 
       {submissions.length === 0 ? (
         <p className="mt-12 text-lg text-muted">

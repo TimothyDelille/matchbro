@@ -1,5 +1,6 @@
 import { BUCKET, configError, getSetting, supabaseAdmin } from "@/lib/supabase/admin";
-import { coverWithMembership, membership, paymentsRequired, planLabels } from "@/lib/stripe";
+import { paymentsRequired, planLabels } from "@/lib/stripe";
+import { coverWithMembership, membership } from "@/lib/billing";
 import { offerEndsAt } from "@/lib/plans";
 import { DEMO_MARKDOWN, DEMO_SCORES, isDemoUser } from "@/lib/demo";
 import { saveReport } from "@/lib/report";
