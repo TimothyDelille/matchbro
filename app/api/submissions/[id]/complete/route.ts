@@ -99,6 +99,8 @@ export async function POST(req: Request, ctx: RouteContext<"/api/submissions/[id
       // Stripe unreachable: fall through to the paywall rather than lose the upload.
       console.error("membership check", e);
     }
+    // iOS pays in-app (RevenueCat, see purchase/route.ts), not through Stripe Checkout.
+    if (req.headers.get("x-client") === "ios") return Response.json({ needsPayment: true });
     const plans = await planLabels();
     if (!plans) return Response.json({ error: "We couldn't load our prices. Try again in a minute." }, { status: 500 });
     const started = await offerStartedAt();

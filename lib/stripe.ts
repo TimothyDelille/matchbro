@@ -365,7 +365,7 @@ export async function markSessionPaid(session: Stripe.Checkout.Session): Promise
  * (they sign in to see it): typing someone's email on Stripe never signs you
  * into their account. Safe to run more than once.
  */
-async function claimPaidEmail(userId: string, submissionId: string, stripeEmail: string | null | undefined): Promise<EmailClaim> {
+export async function claimPaidEmail(userId: string, submissionId: string, stripeEmail: string | null | undefined): Promise<EmailClaim> {
   const db = supabaseAdmin();
   const { data: profile } = await db.from("profiles").select("email").eq("id", userId).maybeSingle();
   const email = stripeEmail?.trim().toLowerCase() ?? "";

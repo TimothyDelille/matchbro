@@ -45,6 +45,8 @@ export async function POST(req: Request) {
   await sweepExpiredUploads();
 
   let userId: string;
+  // The iOS app has no cookies: it gets the new guest's tokens in the response instead.
+  let session: { access_token: string; refresh_token: string } | null = null;
   if (sessionUser) {
     userId = sessionUser.id;
   } else {
@@ -57,8 +59,11 @@ export async function POST(req: Request) {
       const created = await createAccount(email, null, password);
       if (!created) throw new Error("guest email collision");
       userId = created;
-      const { error: signInError } = await (await supabaseServer()).auth.signInWithPassword({ email, password });
+      const { data: signedIn, error: signInError } = await (await supabaseServer()).auth.signInWithPassword({ email, password });
       if (signInError) console.error("sign in guest", signInError);
+      if (req.headers.get("x-client") === "ios" && signedIn.session) {
+        session = { access_token: signedIn.session.access_token, refresh_token: signedIn.session.refresh_token };
+      }
     } catch (e) {
       console.error("account", e);
       return fail("Something went wrong. Try again.", 500);
@@ -102,5 +107,5 @@ export async function POST(req: Request) {
     if (error) console.error("onboarding answers", error);
   }
 
-  return Response.json({ submissionId, uploads });
+  return Response.json({ submissionId, uploads, ...(session ? { session } : {}) });
 }
