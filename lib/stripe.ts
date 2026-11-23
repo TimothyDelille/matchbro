@@ -74,7 +74,9 @@ async function getCoupon(id: string): Promise<Stripe.Coupon | null> {
     const c = await stripe().coupons.retrieve(id);
     coupon = c.valid ? c : null;
   } catch (e) {
-    if ((e as { code?: string }).code !== "resource_missing") throw e;
+    // Missing coupon = no offer. Any other failure (e.g. a restricted key without
+    // "Coupons: read") must not take the paywall down: sell at full price instead.
+    if ((e as { code?: string }).code !== "resource_missing") console.error(`coupon ${id}: treating as no coupon`, (e as Error).message);
   }
   couponCache.set(id, { coupon, at: Date.now() });
   return coupon;
