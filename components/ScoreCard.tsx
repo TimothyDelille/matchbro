@@ -39,52 +39,75 @@ export default function ScoreCard({
   }
 
   return (
-    <section
-      aria-roledescription="carousel"
-      aria-labelledby="score-heading"
-      className="mt-6 overflow-hidden rounded-3xl bg-ink text-paper"
-    >
-      <div
-        ref={track}
-        onScroll={onScroll}
-        tabIndex={slides > 1 ? 0 : undefined}
-        className="flex snap-x snap-mandatory overflow-x-auto rounded-t-3xl overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+    <div className="relative mt-6">
+      <section
+        aria-roledescription="carousel"
+        aria-labelledby="score-heading"
+        className="overflow-hidden rounded-3xl bg-ink text-paper"
       >
         <div
-          role="group"
-          aria-roledescription="slide"
-          aria-label={`1 of ${slides}`}
-          className={`w-full flex-none snap-start ${hasPhoto ? "sm:grid sm:grid-cols-2" : ""}`}
+          ref={track}
+          onScroll={onScroll}
+          tabIndex={slides > 1 ? 0 : undefined}
+          className="flex snap-x snap-mandatory overflow-x-auto rounded-t-3xl overscroll-x-contain outline-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          <ScoreSlide scores={scores} total={total} hero={hasPhoto ? hero : null} hasPhoto={hasPhoto} />
-        </div>
-        {distribution && (
           <div
             role="group"
             aria-roledescription="slide"
-            aria-label={`2 of ${slides}`}
-            className="flex w-full flex-none snap-start flex-col items-center justify-center px-6 py-8 text-center sm:grid sm:grid-cols-2 sm:gap-6 sm:px-8"
+            aria-label={`1 of ${slides}`}
+            className={`w-full flex-none snap-start ${hasPhoto ? "sm:grid sm:grid-cols-2" : ""}`}
           >
-            <CompareSlide total={total} distribution={distribution} hero={hasPhoto ? hero : null} active={slide === 1} />
+            <ScoreSlide scores={scores} total={total} hero={hasPhoto ? hero : null} hasPhoto={hasPhoto} />
+          </div>
+          {distribution && (
+            <div
+              role="group"
+              aria-roledescription="slide"
+              aria-label={`2 of ${slides}`}
+              className="flex w-full flex-none snap-start flex-col items-center justify-center px-6 py-8 text-center sm:grid sm:grid-cols-2 sm:gap-6 sm:px-8"
+            >
+              <CompareSlide total={total} distribution={distribution} hero={hasPhoto ? hero : null} active={slide === 1} />
+            </div>
+          )}
+        </div>
+
+        {slides > 1 && (
+          <div className="flex justify-center gap-2 pb-5 pt-1">
+            {[0, 1].map((i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => goTo(i)}
+                aria-label={i === 0 ? "Show your score" : "Show how you compare"}
+                aria-current={slide === i}
+                className={`h-2 rounded-full transition-all duration-300 ${slide === i ? "w-6 bg-paper" : "w-2 bg-paper/35 hover:bg-paper/60"}`}
+              />
+            ))}
           </div>
         )}
-      </div>
-
+      </section>
       {slides > 1 && (
-        <div className="flex justify-center gap-2 pb-5 pt-1">
-          {[0, 1].map((i) => (
-            <button
-              key={i}
-              type="button"
-              onClick={() => goTo(i)}
-              aria-label={i === 0 ? "Show your score" : "Show how you compare"}
-              aria-current={slide === i}
-              className={`h-2 rounded-full transition-all duration-300 ${slide === i ? "w-6 bg-paper" : "w-2 bg-paper/35 hover:bg-paper/60"}`}
+        <button
+          type="button"
+          onClick={() => goTo(slide === 0 ? 1 : 0)}
+          aria-label={slide === 0 ? "Show how you compare" : "Show your score"}
+          // Straddles the card's edge (mid-picture on phones, mid-height on wider screens): right edge to go forward, left edge to come back.
+          className={`absolute top-[30%] z-10 grid size-11 sm:top-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-ink bg-paper text-ink shadow-[0_6px_16px_-4px_rgb(0_0_0/0.45)] transition hover:scale-110 active:scale-95 sm:size-12 ${
+            slide === 0 ? "-right-2 sm:right-0 sm:translate-x-1/2" : "-left-2 sm:left-0 sm:-translate-x-1/2"
+          }`}
+        >
+          <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden>
+            <path
+              d={slide === 0 ? "M6 3l5 5-5 5" : "M10 3 5 8l5 5"}
+              stroke="currentColor"
+              strokeWidth="2.25"
+              strokeLinecap="round"
+              strokeLinejoin="round"
             />
-          ))}
-        </div>
+          </svg>
+        </button>
       )}
-    </section>
+    </div>
   );
 }
 
