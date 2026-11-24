@@ -33,7 +33,15 @@ export default function AdminPage() {
     <main className="flex-1 flex flex-col">
       <AdminHeader />
       <section className="mx-auto w-full max-w-5xl px-5 sm:px-8 py-10">
-        <h1 className="text-5xl font-extrabold tracking-[-0.04em] leading-none">Submissions</h1>
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <h1 className="text-5xl font-extrabold tracking-[-0.04em] leading-none">Submissions</h1>
+          <Link
+            href="/admin/profile-maker"
+            className="rounded-full border border-line px-4 py-2 text-sm font-semibold hover:border-ink"
+          >
+            🎨 Profile maker
+          </Link>
+        </div>
         <Suspense fallback={<p className="mt-10 text-muted">Loading…</p>}>
           <Submissions />
         </Suspense>

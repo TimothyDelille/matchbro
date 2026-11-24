@@ -66,10 +66,10 @@ export function scoreColor(score: number): string {
 
 /** A short verdict for the profile score, shown next to the number. */
 export function scoreVerdict(score: number): string {
-  if (score > 80) return "Top tier";
+  if (score > 80) return "Goated";
   if (score >= 65) return "Solid";
-  if (score >= 50) return "Average";
-  return "Needs work";
+  if (score >= 50) return "Mid";
+  return "Cooked";
 }
 
 /** Fewer reviewed profiles than this and the distribution slide isn't shown. */

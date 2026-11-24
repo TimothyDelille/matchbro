@@ -9,6 +9,7 @@
   --flame-deep: #e2400a;
   --butter: #ffd84a;
   --line: #ece8ef;
+  --cream: #faf6ef;
   /* Profile score bands (yellow is --butter). */
   --good: #22a55b;
   --bad: #e5383b;
@@ -22,6 +23,7 @@
   --color-flame-deep: var(--flame-deep);
   --color-butter: var(--butter);
   --color-line: var(--line);
+  --color-cream: var(--cream);
   --color-good: var(--good);
   --color-bad: var(--bad);
   --font-sans: "Bricolage Grotesque Variable", system-ui, sans-serif;
@@ -74,6 +76,25 @@ dialog[open] {
 @keyframes bar-fill {
   from {
     transform: scaleX(0);
+  }
+}
+
+/* Score card: the uploads fan out from a stack, and the rank marker slides to the score. */
+.fan-in {
+  animation: fan-in 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.15) backwards;
+}
+@keyframes fan-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(16px) rotate(0deg);
+  }
+}
+.rank-in {
+  animation: rank-in 1s cubic-bezier(0.2, 0.8, 0.2, 1) 0.4s backwards;
+}
+@keyframes rank-in {
+  from {
+    left: 0;
   }
 }
 
@@ -190,6 +211,8 @@ dialog[open] {
   }
   .ring-fill,
   .bar-fill,
+  .fan-in,
+  .rank-in,
   .analyze-in,
   .step-in,
   .pop-in,

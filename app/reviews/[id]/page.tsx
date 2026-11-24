@@ -166,7 +166,7 @@ async function Review({
         </p>
       )}
 
-      {/* Their own pictures sit behind the score, locked or not. */}
+      {/* Their own pictures fan out above the score, locked or not. */}
       <ScoreCard
         scores={scores}
         distribution={distribution}
