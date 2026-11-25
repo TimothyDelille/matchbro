@@ -90,12 +90,20 @@ export default function ScoreCard({
 
 /**
  * Up to six uploads fanned out like a hand of cards. The first upload sits on top
- * in the middle; the rest alternate out to either side behind it.
+ * in the middle; the rest alternate out to either side behind it. A single upload
+ * is shown on its own, big.
  */
 function PhotoFan({ photos, onError }: { photos: string[]; onError: (url: string) => void }) {
   const [ratios, setRatios] = useState<Record<string, number>>({});
   const n = photos.length;
-  const spread = Math.min(56, (n - 1) * 12);
+  const measure = (url: string) => (img: HTMLImageElement | null) => {
+    const { naturalWidth: w = 0, naturalHeight: h = 0 } = img ?? {};
+    if (h && ratios[url] !== w / h) setRatios((r) => ({ ...r, [url]: w / h }));
+  };
+
+  if (n === 1) return <SinglePhoto url={photos[0]} ratio={ratios[photos[0]]} onLoad={measure(photos[0])} onError={onError} />;
+
+  const spread = Math.min(32, (n - 1) * 8);
   const mid = (n - 1) / 2;
   // Slot (left to right) for each upload: first in the middle, then right, left, right…
   const centre = Math.floor(mid);
@@ -106,7 +114,7 @@ function PhotoFan({ photos, onError }: { photos: string[]; onError: (url: string
   }
 
   return (
-    <div className="relative h-72 sm:origin-bottom sm:scale-[0.82]" aria-hidden>
+    <div className="relative h-[23rem] sm:h-[25rem]" aria-hidden>
       {photos.map((url, i) => {
         const slot = slotOf[i];
         const angle = n > 1 ? -spread / 2 + (spread * slot) / (n - 1) : 0;
@@ -114,12 +122,12 @@ function PhotoFan({ photos, onError }: { photos: string[]; onError: (url: string
         return (
           <div
             key={url}
-            className="fan-in absolute bottom-8 left-1/2 aspect-[9/17] w-28 overflow-hidden rounded-xl bg-paper shadow-[0_10px_22px_-8px_rgb(23_18_28/0.35),0_0_0_1px_rgb(23_18_28/0.06)]"
+            className="fan-in absolute bottom-9 left-1/2 aspect-[9/17] w-40 overflow-hidden rounded-2xl bg-paper shadow-[0_14px_30px_-10px_rgb(23_18_28/0.4),0_0_0_1px_rgb(23_18_28/0.06)]"
             style={
               {
                 "--fan": `translateX(-50%) rotate(${angle}deg)`,
                 transform: "var(--fan)",
-                transformOrigin: "50% 140%",
+                transformOrigin: "50% 120%",
                 zIndex: n - i,
                 animationDelay: `${0.05 * Math.abs(slot - mid)}s`,
               } as React.CSSProperties
@@ -131,15 +139,52 @@ function PhotoFan({ photos, onError }: { photos: string[]; onError: (url: string
               alt=""
               className="h-full w-full object-cover"
               style={{ objectPosition: photo ? "50% 25%" : "50% 0%" }}
-              onLoad={(e) => {
-                const { naturalWidth: w, naturalHeight: h } = e.currentTarget;
-                if (h) setRatios((r) => ({ ...r, [url]: w / h }));
-              }}
+              onLoad={(e) => measure(url)(e.currentTarget)}
               onError={() => onError(url)}
             />
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/**
+ * Only one upload: show it big, as a single print with a slight tilt. A photo keeps
+ * its own shape; a phone screenshot is cropped to its top (name and first picture).
+ */
+function SinglePhoto({
+  url,
+  ratio,
+  onLoad,
+  onError,
+}: {
+  url: string;
+  ratio: number | undefined;
+  onLoad: (img: HTMLImageElement | null) => void;
+  onError: (url: string) => void;
+}) {
+  const screenshot = ratio !== undefined && ratio < PHOTO_RATIO;
+  return (
+    <div className="flex h-[23rem] items-center justify-center pb-7 pt-9 sm:h-[25rem]" aria-hidden>
+      <div
+        // Hidden until we know its shape, then it pops in.
+        className={`h-full -rotate-3 overflow-hidden rounded-3xl bg-paper p-1.5 shadow-[0_18px_36px_-12px_rgb(23_18_28/0.45),0_0_0_1px_rgb(23_18_28/0.06)] ${ratio === undefined ? "opacity-0" : "single-in"}`}
+      >
+        {/* eslint-disable-next-line @next/next/no-img-element -- signed storage URL */}
+        <img
+          src={url}
+          alt=""
+          className={`h-full max-w-[78vw] rounded-[1.1rem] object-cover sm:max-w-full ${screenshot ? "aspect-[3/4] w-auto" : "w-auto"}`}
+          style={{ objectPosition: screenshot ? "50% 0%" : "50% 30%" }}
+          // Already loaded before hydration: onLoad won't fire, so measure on mount too.
+          ref={(img) => {
+            if (img?.complete) onLoad(img);
+          }}
+          onLoad={(e) => onLoad(e.currentTarget)}
+          onError={() => onError(url)}
+        />
+      </div>
     </div>
   );
 }
@@ -208,12 +253,12 @@ const HYPE = ["😎", "🔥", "😏", "🤩", "💯", "😜"];
  * Sizes, angles, timings and wiggles are deliberately uneven so it doesn't look like a grid.
  */
 const SPOTS: { at: React.CSSProperties; size: number; tilt: number; delay: number; dur: number; amp: number }[] = [
-  { at: { left: "4%", top: "0%" }, size: 44, tilt: -17, delay: 0.45, dur: 1.8, amp: 12 },
+  { at: { left: "3%", top: "2%" }, size: 44, tilt: -17, delay: 0.45, dur: 1.8, amp: 12 },
   { at: { right: "6%", top: "6%" }, size: 32, tilt: 24, delay: 0.95, dur: 2.7, amp: 7 },
   { at: { left: "1%", top: "52%" }, size: 28, tilt: 8, delay: 0.7, dur: 3.3, amp: 15 },
   { at: { right: "2%", top: "46%" }, size: 46, tilt: -12, delay: 1.35, dur: 2.1, amp: 6 },
-  { at: { left: "28%", top: "-3%" }, size: 24, tilt: 31, delay: 1.15, dur: 2.9, amp: 18 },
-  { at: { right: "27%", top: "-4%" }, size: 28, tilt: -26, delay: 0.6, dur: 2.4, amp: 9 },
+  { at: { left: "27%", top: "1%" }, size: 24, tilt: 31, delay: 1.15, dur: 2.9, amp: 18 },
+  { at: { right: "25%", top: "0%" }, size: 28, tilt: -26, delay: 0.6, dur: 2.4, amp: 9 },
 ];
 
 /** Reaction emojis around the fan: they pop in on load, then keep wiggling. */
